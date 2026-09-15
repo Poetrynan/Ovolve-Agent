@@ -98,6 +98,22 @@ class RouterAdmissionMixin:
                     mem.scope = MemoryScope.SESSION
                     self.memory.store(mem)
                 count += len(extracted)
+
+                if extracted:
+                    try:
+                        from evolution import get_evolution_engine, _propose_facts, EvolutionObservation
+                        evo = get_evolution_engine(getattr(self, "workspace", None))
+                        if evo and evo.enabled():
+                            fact_texts = [getattr(m, "content", "") for m in extracted if getattr(m, "content", "")]
+                            if fact_texts:
+                                obs = EvolutionObservation(
+                                    decision="LEARN_FACTS",
+                                    session_id=self.session_id,
+                                    new_facts=fact_texts,
+                                )
+                                _propose_facts(obs, evo, storage=getattr(self, "storage", None))
+                    except Exception:
+                        pass
             except Exception:
                 pass  # fail-open: 可选增强，失败不影响主流程
         return count
@@ -219,6 +235,34 @@ class RouterAdmissionMixin:
         """Fold before a turn if the budget is nearly spent. Returns the report."""
         r = await self.fold_context(manual=False)
         return r.value if r.ok else None
+
+    async def _maybe_fold_on_pressure(self, context: dict) -> None:
+        """Probe context pressure at async turn completion, dispatch signal and fold if needed."""
+        try:
+            import time
+            from evolution_pressure import probe_context_pressure
+            comp = getattr(self, "compactor", None)
+            budget = getattr(comp, "max_tokens", 80000) if comp else 80000
+            th = getattr(comp, "threshold", 0.8) if comp else 0.8
+            turn_id = str(context.get("turn_id") or f"turn_{getattr(self, '_turn_seq', 1)}")
+            msgs = self.storage.get_messages(self.session_id, limit=getattr(self, "FOLD_SCAN_LIMIT", 50)) if hasattr(self, "storage") else []
+
+            triggered = bool(context.get("context_pressure_triggered"))
+            if not triggered and msgs:
+                triggered, _ratio, _sig_id = probe_context_pressure(
+                    msgs, max_context_tokens=budget, threshold=th,
+                    session_id=self.session_id, turn_id=turn_id,
+                )
+
+            if triggered:
+                now = time.time()
+                last_fold = getattr(self, "_last_pressure_fold_at", 0.0)
+                if (now - last_fold) >= 600.0:  # 10 分钟防抖
+                    self._last_pressure_fold_at = now
+                    if hasattr(self, "fold_context"):
+                        await self.fold_context(manual=True)
+        except Exception:
+            pass  # fail-open
 
     #: 工业级自主运行循环：默认无步数截断（0 代表无限制，持续执行直至模型收敛或用户中断）
     MAX_AGENT_STEPS: int = 0
@@ -1468,21 +1512,8 @@ class RouterAdmissionMixin:
                          extra={"ok": bool(result.ok),
                                 "cancelled": bool((result.meta or {}).get("cancelled"))})
 
-        # Context-pressure evolution check post TURN_COMPLETED
-        try:
-            from evolution_pressure import probe_context_pressure
-            _comp = getattr(self, "compactor", None)
-            _budget = getattr(_comp, "max_tokens", 80000) if _comp else 80000
-            _th = getattr(_comp, "threshold", 0.8) if _comp else 0.8
-            _turn_id = str(context.get("turn_id") or f"turn_{self._turn_seq}")
-            _msgs = self.storage.get_messages(self.session_id, limit=50) if hasattr(self, "storage") else []
-            if _msgs:
-                probe_context_pressure(
-                    _msgs, max_context_tokens=_budget, threshold=_th,
-                    session_id=self.session_id, turn_id=_turn_id,
-                )
-        except Exception:
-            pass
+        # Context-pressure evolution check and active compaction post TURN_COMPLETED
+        await self._maybe_fold_on_pressure(context)
 
         # The usage figures ride along in meta so a programmatic caller (the goal
         # scheduler) can charge this turn's real spend to its budget. Previously

@@ -150,6 +150,8 @@ KIND_TARGET: dict[str, str] = {
     # 直写 AGENTS.md、默认开启、无审批（见 memory_layer._update_agents_md 的
     # 注释）。现在并入同一条提案管线，写入口只剩一个。
     "extracted_context": "AGENTS.md",
+    # 上下文压力（超限/折叠风险）沉淀的操作守则归 AGENTS.md（工程与行为约定）。
+    "context_pressure": "AGENTS.md",
 }
 
 
@@ -2259,6 +2261,9 @@ class EvolutionEngine:
                     "开始该类操作前先摘要计划、等待确认。")
         if kind == "user_correction":
             return f"- 用户偏好：{summary}"
+        if kind == "context_pressure":
+            return (f"- 上下文压力较高时（{summary}）："
+                    "优先分步精简输出、主动折叠上下文，避免单回合超出预算。")
         return f"- {summary}"
 
 
