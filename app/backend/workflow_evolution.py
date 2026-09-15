@@ -32,6 +32,8 @@ class WorkflowExecutionMetrics:
     last_run_timestamp: float = field(default_factory=time.time)
     avg_latency_ms: float = 0.0
     is_promotion_candidate: bool = False
+    consecutive_failures: int = 0
+    is_degraded: bool = False
 
     @property
     def success_rate(self) -> float:
@@ -60,10 +62,20 @@ class WorkflowMetricsTracker:
 
         m = self._metrics[workflow_id]
         m.total_runs += 1
-        if success:
+
+        if success and not drift:
             m.success_runs += 1
-        if drift:
-            m.drift_runs += 1
+            m.consecutive_failures = 0
+            if m.is_degraded:
+                m.is_degraded = False
+                self._recover_skill(workflow_id)
+        else:
+            m.consecutive_failures += 1
+            if drift:
+                m.drift_runs += 1
+            if m.consecutive_failures >= 3 and not m.is_degraded:
+                m.is_degraded = True
+                self._degrade_skill(workflow_id)
 
         m.last_run_timestamp = time.time()
         # 平滑平均延迟
@@ -73,8 +85,40 @@ class WorkflowMetricsTracker:
             m.avg_latency_ms = (m.avg_latency_ms * (m.total_runs - 1) + latency_ms) / m.total_runs
 
         # 晋升资格判定：成功 >= 3 次且漂移率 <= 0
-        m.is_promotion_candidate = (m.success_runs >= 3 and m.drift_rate <= 0.0)
+        m.is_promotion_candidate = (m.success_runs >= 3 and m.drift_rate <= 0.0 and not m.is_degraded)
         return m
+
+    @staticmethod
+    def _degrade_skill(workflow_id: str) -> bool:
+        """连续失败或漂移达到阈值时，自动将技能置为 DISABLED 状态（fail-open）。"""
+        try:
+            from skill_loader import get_skill_loader
+            loader = get_skill_loader()
+            clean_id = re.sub(r"[^a-zA-Z0-9_-]", "-", workflow_id.lower())
+            for name in [f"wf-{clean_id}", workflow_id, clean_id]:
+                entry = loader.get_skill(name)
+                if entry:
+                    loader.disable_skill(name)
+                    return True
+        except Exception:
+            pass
+        return False
+
+    @staticmethod
+    def _recover_skill(workflow_id: str) -> bool:
+        """测试或回放干净成功后，自动将之前降级的技能恢复为 IMPORTED 状态（fail-open）。"""
+        try:
+            from skill_loader import get_skill_loader, SkillStatus
+            loader = get_skill_loader()
+            clean_id = re.sub(r"[^a-zA-Z0-9_-]", "-", workflow_id.lower())
+            for name in [f"wf-{clean_id}", workflow_id, clean_id]:
+                entry = loader.get_skill(name)
+                if entry and entry.status == SkillStatus.DISABLED:
+                    loader.enable_skill(name)
+                    return True
+        except Exception:
+            pass
+        return False
 
     def get_metrics(self, workflow_id: str) -> Optional[WorkflowExecutionMetrics]:
         return self._metrics.get(workflow_id)

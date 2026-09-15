@@ -277,7 +277,7 @@ class Proposal:
 
     def _infer_human_meta(self) -> tuple[str, str, str, str]:
         """为提案生成自然语言的用户标题、行为建议、业务原因与分类标签。"""
-        draft_clean = re.sub(r"^[-*]\s*", "", self.draft or "").strip()
+        draft_clean = re.sub(r"^[-*]\s*(?:\[[^\]]+\]\s*)*", "", self.draft or "").strip()
         draft_clean = re.sub(r"^\[fact\]\s*", "", draft_clean, flags=re.IGNORECASE).strip()
         # 清除 <n> 占位符
         draft_clean = re.sub(r"<n>", "", draft_clean).strip()
@@ -694,6 +694,116 @@ def _similarity(a: str, b: str) -> float:
     if not x or not y:
         return 0.0
     return len(x & y) / len(x | y)
+
+
+def parse_rule_line(line: str) -> dict[str, Any]:
+    """解析一条规则行，提取 [id] [hits:n] [last:date] 与主体内容。兼容无元数据的旧规则。"""
+    s = str(line or "").strip()
+    if s.startswith("-"):
+        s = s[1:].strip()
+    rule_id = ""
+    hits = 1
+    last_date = ""
+
+    while s.startswith("["):
+        close_idx = s.find("]")
+        if close_idx == -1:
+            break
+        tag = s[1:close_idx].strip()
+        s = s[close_idx + 1:].strip()
+        if tag.startswith("hits:"):
+            try:
+                hits = int(tag.split(":", 1)[1])
+            except ValueError:
+                pass
+        elif tag.startswith("last:"):
+            last_date = tag.split(":", 1)[1].strip()
+        else:
+            rule_id = tag
+
+    content = s.strip()
+    return {
+        "id": rule_id,
+        "hits": max(1, hits),
+        "last": last_date,
+        "content": content,
+        "raw": line,
+    }
+
+
+def format_rule_line(
+    content: str,
+    rule_id: str = "",
+    hits: int = 1,
+    last_date: str = "",
+) -> str:
+    """把内容与元数据组装为结构化规则 bullet: - [rule_id] [hits:n] [last:YYYY-MM-DD] 内容。"""
+    clean_content = content.lstrip("-").strip()
+    parsed = parse_rule_line(clean_content)
+    if parsed["content"]:
+        clean_content = parsed["content"]
+        if not rule_id:
+            rule_id = parsed["id"]
+        if hits <= 1 and parsed["hits"] > 1:
+            hits = parsed["hits"]
+        if not last_date and parsed["last"]:
+            last_date = parsed["last"]
+
+    rid = rule_id or f"rule-{uuid.uuid4().hex[:8]}"
+    h = max(1, hits)
+    d = last_date or time.strftime("%Y-%m-%d")
+    return f"- [{rid}] [hits:{h}] [last:{d}] {clean_content}"
+
+
+def find_matching_rule_index(
+    content: str,
+    section_lines: list[str],
+    rule_id: str = "",
+    threshold: float = 0.65,
+) -> int:
+    """在现有规则列表中查找同主题规则行索引。未找到返回 -1。"""
+    if not content and not rule_id:
+        return -1
+    for i, line in enumerate(section_lines):
+        parsed = parse_rule_line(line)
+        if rule_id and parsed["id"] and parsed["id"] == rule_id:
+            return i
+        if content and parsed["content"]:
+            sim = _similarity(content, parsed["content"])
+            if sim >= threshold:
+                return i
+    return -1
+
+
+def consolidate_rules(section_text: str, max_rules: int = 50) -> str:
+    """按命中率与新鲜度排序并去重规则，控制规则库规模（Bounded Growth）。"""
+    lines = [ln.strip() for ln in section_text.splitlines() if ln.strip()]
+    parsed_rules = []
+    for ln in lines:
+        if ln.startswith("-"):
+            parsed_rules.append(parse_rule_line(ln))
+
+    deduped: list[dict[str, Any]] = []
+    for r in parsed_rules:
+        matched = False
+        for existing in deduped:
+            if _similarity(r["content"], existing["content"]) >= 0.70:
+                existing["hits"] += r["hits"]
+                if r["last"] and (not existing["last"] or r["last"] > existing["last"]):
+                    existing["last"] = r["last"]
+                matched = True
+                break
+        if not matched:
+            deduped.append(r)
+
+    deduped.sort(key=lambda x: (x["hits"], x["last"]), reverse=True)
+    deduped = deduped[:max_rules]
+
+    out_lines = [
+        format_rule_line(r["content"], rule_id=r["id"], hits=r["hits"], last_date=r["last"])
+        for r in deduped
+    ]
+    return "\n".join(out_lines)
 
 
 def find_conflicting_line(text: str, existing: list) -> str:
@@ -2215,6 +2325,9 @@ class EvolutionEngine:
         hits = int(row.get("hits") or 0)
         detail = (row.get("detail") or "").strip()
         rule = self._compose_rule(kind, tool_name, detail)
+        prop_id = uuid.uuid4().hex[:12]
+        today = time.strftime("%Y-%m-%d")
+        structured_rule = format_rule_line(rule, rule_id=prop_id, hits=hits, last_date=today)
         clean_sum = normalize_error(detail)[:160]
         clean_sum = re.sub(r"<n>", "", clean_sum).strip()
         rationale = (
@@ -2222,12 +2335,12 @@ class EvolutionEngine:
             f"来源工具: {tool_name or '系统操作'} · 摘要: {clean_sum}"
         )
         return Proposal(
-            id=uuid.uuid4().hex[:12],
+            id=prop_id,
             signature=row["signature"],
             kind=kind,
             tool_name=tool_name,
             target_file=target,
-            draft=rule,
+            draft=structured_rule,
             rationale=rationale,
             hits=hits,
             status="pending",
@@ -2499,7 +2612,9 @@ class EvolutionEngine:
 
         head, section_lines, tail = _split_evolution_section(existing)
         rule = p.draft.strip()
-        # 冲突提案：把旧行**原地换掉**，不是追加。位置保留是有意的——用户在
+        today = time.strftime("%Y-%m-%d")
+
+        # 1. 冲突提案 / 显式替换：把旧行**原地换掉**，不是追加。位置保留是有意的——用户在
         # MEMORY.md 里按顺序读这些规则，把改写过的一条挪到末尾会打乱他的心智模型。
         old = (p.supersedes or "").strip()
         replaced = False
@@ -2509,6 +2624,26 @@ class EvolutionEngine:
                     section_lines[i] = rule
                     replaced = True
                     break
+
+        # 2. 同主题增量合并：新提案与已有规则属于同主题时合并更新，更新命中次数与时间，避免重复堆叠
+        if not replaced:
+            parsed_draft = parse_rule_line(rule)
+            matched_idx = find_matching_rule_index(
+                parsed_draft["content"],
+                section_lines,
+                rule_id=parsed_draft["id"] or p.id,
+                threshold=0.65,
+            )
+            if matched_idx >= 0:
+                matched_line = section_lines[matched_idx]
+                existing_meta = parse_rule_line(matched_line)
+                new_hits = existing_meta["hits"] + max(1, p.hits, parsed_draft["hits"])
+                new_id = existing_meta["id"] or parsed_draft["id"] or p.id or f"rule-{uuid.uuid4().hex[:8]}"
+                new_content = parsed_draft["content"] or existing_meta["content"]
+                section_lines[matched_idx] = format_rule_line(new_content, rule_id=new_id, hits=new_hits, last_date=today)
+                replaced = True
+
+        # 3. 全新规则追加
         if not replaced and rule and rule not in section_lines:
             section_lines.append(rule)
 

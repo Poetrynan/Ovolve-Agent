@@ -1945,15 +1945,26 @@ class MemoryLayer:
 
         Uses `updated_at` in preference to `created_at`: a memory that was
         re-confirmed last week is current knowledge even if first recorded a
-        year ago.
+        year ago. Incorporates access recency and citation reinforcement.
         """
         if not self.decay_enabled:
             return 1.0
         ts = row.get("updated_at") or row.get("created_at") or 0
         if not ts:
             return 1.0
-        age_days = max(0.0, (time.time() - float(ts)) / 86400.0)
-        return 0.5 ** (age_days / RECALL_HALFLIFE_DAYS)
+        now = time.time()
+        created_age = max(0.0, (now - float(ts)) / 86400.0)
+        accessed_ts = row.get("accessed_at") or row.get("last_accessed_at")
+        if accessed_ts and float(accessed_ts) > 0:
+            access_age = max(0.0, (now - float(accessed_ts)) / 86400.0)
+            effective_age = 0.2 * created_age + 0.8 * access_age
+        else:
+            effective_age = created_age
+
+        base_decay = 0.5 ** (effective_age / RECALL_HALFLIFE_DAYS)
+        hits = float(row.get("hits") or 0)
+        citation_bonus = min(1.5, 1.0 + 0.1 * math.log1p(max(0.0, hits)))
+        return min(1.0, base_decay * citation_bonus)
 
     @staticmethod
     def _confidence_of(row: dict) -> float:

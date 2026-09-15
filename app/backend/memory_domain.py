@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -115,6 +116,7 @@ class MemoryItem:
     created_at: int = 0
     updated_at: int = 0
     hits: int = 0
+    last_accessed_at: int = 0
     #: 结构化三元组，只有断言有。给冲突视图用。
     subject: str = ""
     predicate: str = ""
@@ -182,6 +184,7 @@ class MemoryItem:
             "createdAt": int(self.created_at),
             "updatedAt": int(self.updated_at),
             "hits": int(self.hits),
+            "lastAccessedAt": int(self.last_accessed_at),
             "editable": self.editable,
             "subject": self.subject,
             "predicate": self.predicate,
@@ -246,6 +249,7 @@ def item_from_entry(row: Dict[str, Any]) -> MemoryItem:
         created_at=int(r.get("created_at") or 0),
         updated_at=int(r.get("updated_at") or 0),
         hits=int(r.get("hits") or 0),
+        last_accessed_at=int(r.get("accessed_at") or r.get("last_accessed_at") or 0),
         sensitivity=str(r.get("sensitivity") or "public"),
         source_goal_id=str(r.get("source_goal_id") or ""),
         source_event_ids=_as_tags(r.get("source_event_ids")),
@@ -971,16 +975,24 @@ def compute_time_decay_score(
     """Calculate time-decay weighted score for a memory item.
 
     Decay follows exponential half-life: w(t) = 2^(-Δt / halflife_days).
-    Blended with item confidence and importance:
-    FinalScore = confidence * (0.6 + 0.4 * importance) * w(t).
+    Blended with item confidence, importance, access heat, and citation bonus:
+    FinalScore = confidence * (0.6 + 0.4 * importance) * w(effective_t) * citation_bonus.
     """
     current_ts = now if now is not None else _now()
     created_ts = item.created_at or current_ts
-    delta_days = max(0.0, (current_ts - created_ts) / 86400.0)
-    decay = (0.5) ** (delta_days / max(1.0, halflife_days))
+    created_delta_days = max(0.0, (current_ts - created_ts) / 86400.0)
+
+    if item.last_accessed_at and item.last_accessed_at > 0:
+        access_delta_days = max(0.0, (current_ts - item.last_accessed_at) / 86400.0)
+        effective_delta_days = 0.2 * created_delta_days + 0.8 * access_delta_days
+    else:
+        effective_delta_days = created_delta_days
+
+    decay = (0.5) ** (effective_delta_days / max(1.0, halflife_days))
+    citation_bonus = min(1.5, 1.0 + 0.1 * math.log1p(max(0, item.hits)))
     conf = max(0.05, min(1.0, item.confidence))
     imp = max(0.05, min(1.0, item.importance))
-    return conf * (0.6 + 0.4 * imp) * decay
+    return conf * (0.6 + 0.4 * imp) * decay * citation_bonus
 
 
 def maximal_marginal_relevance(
