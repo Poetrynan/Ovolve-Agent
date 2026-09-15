@@ -3600,6 +3600,56 @@ async def handle_evolution_undo_list(request):
     return web.json_response({"ok": True, "snapshots": entries})
 
 
+# ── Workflow Schedules ──
+
+async def handle_workflow_schedules_list(request):
+    """GET /api/workflows/schedules — List all scheduled workflows."""
+    from workflow_scheduler import get_workflow_scheduler
+    scheduler = get_workflow_scheduler()
+    enabled_only = request.query.get("enabled_only", "").strip().lower() in ("1", "true")
+    schedules = scheduler.list_schedules(enabled_only=enabled_only)
+    return web.json_response({"ok": True, "schedules": schedules, "count": len(schedules)})
+
+
+async def handle_workflow_schedule_create(request):
+    """POST /api/workflows/schedules — Register recurring workflow schedule."""
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    workflow_id = str(body.get("workflow_id") or "").strip()
+    cron_expr = str(body.get("cron_expr") or "").strip()
+    session_id = str(body.get("session_id") or "").strip()
+    require_promoted = body.get("require_promoted", True)
+
+    if not workflow_id or not cron_expr:
+        return web.json_response({"ok": False, "error": "workflow_id and cron_expr are required"}, status=400)
+
+    from workflow_scheduler import get_workflow_scheduler
+    scheduler = get_workflow_scheduler()
+    res = scheduler.create_schedule(
+        workflow_id=workflow_id,
+        cron_expr=cron_expr,
+        session_id=session_id,
+        require_promoted=require_promoted,
+    )
+    if not res.ok:
+        return web.json_response({"ok": False, "error": res.error}, status=400)
+    return web.json_response({"ok": True, "schedule": res.value})
+
+
+async def handle_workflow_schedule_delete(request):
+    """DELETE /api/workflows/schedules/{id} — Delete scheduled workflow job."""
+    schedule_id = request.match_info.get("id", "")
+    from workflow_scheduler import get_workflow_scheduler
+    scheduler = get_workflow_scheduler()
+    res = scheduler.delete_schedule(schedule_id)
+    if not res.ok:
+        return web.json_response({"ok": False, "error": res.error}, status=404)
+    return web.json_response({"ok": True, "deleted": True, "schedule_id": schedule_id})
+
+
 # ── Cron ──
 
 async def handle_crons(request):
@@ -8088,7 +8138,21 @@ async def create_server(router: Router, host: str = "127.0.0.1", port: int = 876
     except Exception as _miner_e:  # noqa: BLE001
         print(f"[evolution_miner] start skipped: {_miner_e}")
 
+    # Workflow scheduler (fail-open)
+    try:
+        from workflow_scheduler import get_workflow_scheduler
+        _scheduler = get_workflow_scheduler()
+        _scheduler.start()
+        print("[workflow_scheduler] started")
+    except Exception as _sched_e:  # noqa: BLE001
+        print(f"[workflow_scheduler] start skipped: {_sched_e}")
+
     async def _on_cleanup_app(app_instance):
+        try:
+            from workflow_scheduler import get_workflow_scheduler
+            get_workflow_scheduler().stop()
+        except Exception:
+            pass
         try:
             from evolution_miner import get_evolution_miner
             get_evolution_miner().stop()
@@ -8125,6 +8189,10 @@ async def create_server(router: Router, host: str = "127.0.0.1", port: int = 876
         web.get('/api/skills/patterns', handle_skill_patterns),
         web.get('/api/evolution/undo', handle_evolution_undo_list),
         web.post('/api/evolution/undo', handle_evolution_undo),
+        # Workflow Schedules
+        web.get('/api/workflows/schedules', handle_workflow_schedules_list),
+        web.post('/api/workflows/schedules', handle_workflow_schedule_create),
+        web.delete('/api/workflows/schedules/{id}', handle_workflow_schedule_delete),
         # Cron
         web.get('/api/crons', handle_crons),
         web.post('/api/crons', handle_create_cron),

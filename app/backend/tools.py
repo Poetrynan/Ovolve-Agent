@@ -800,6 +800,70 @@ def create_builtin_tools():
             when_to_use="When an accepted evolution rule needs to be reverted or caused unexpected behavior.",
             when_not_to_use="Do not use for rolling back normal workspace source code files.",
         ),
+        ToolDef(
+            "workflow_schedule_create",
+            "Create a recurring cron schedule for an executable or promoted workflow.",
+            {
+                "type": "object",
+                "properties": {
+                    "workflow_id": {
+                        "type": "string",
+                        "description": "ID of the saved workflow to schedule.",
+                    },
+                    "cron_expr": {
+                        "type": "string",
+                        "description": "Standard 5-field cron expression (e.g. '0 9 * * 1-5' or '*/15 * * * *') or macro (e.g. '@daily').",
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional session ID context for the scheduled execution.",
+                        "default": "",
+                    },
+                },
+                "required": ["workflow_id", "cron_expr"],
+            },
+            _workflow_schedule_create_impl,
+            domain="app",
+            risk_level="medium",
+            when_to_use="When scheduling an automated, recurring execution of a recorded workflow.",
+        ),
+        ToolDef(
+            "workflow_schedule_list",
+            "List all scheduled workflow jobs and their execution status.",
+            {
+                "type": "object",
+                "properties": {
+                    "enabled_only": {
+                        "type": "boolean",
+                        "description": "Filter to only active/enabled schedules.",
+                        "default": False,
+                    },
+                },
+                "required": [],
+            },
+            _workflow_schedule_list_impl,
+            domain="app",
+            risk_level="low",
+            when_to_use="When inspecting active or configured workflow schedules.",
+        ),
+        ToolDef(
+            "workflow_schedule_delete",
+            "Cancel and remove a scheduled workflow job by its schedule ID.",
+            {
+                "type": "object",
+                "properties": {
+                    "schedule_id": {
+                        "type": "string",
+                        "description": "ID of the schedule to remove.",
+                    },
+                },
+                "required": ["schedule_id"],
+            },
+            _workflow_schedule_delete_impl,
+            domain="app",
+            risk_level="medium",
+            when_to_use="When deleting or cancelling an automated workflow schedule.",
+        ),
     ]
 
 
@@ -880,6 +944,25 @@ def _evolution_undo_impl(proposal_id: str = "", **kwargs) -> Result:
     from evolution_undo import undo
     ws = kwargs.get("workspace_root") or os.getcwd()
     return undo(workspace_root=ws, proposal_id=proposal_id or None)
+
+
+def _workflow_schedule_create_impl(workflow_id: str, cron_expr: str, session_id: str = "", **kwargs) -> Result:
+    from workflow_scheduler import get_workflow_scheduler
+    scheduler = get_workflow_scheduler()
+    return scheduler.create_schedule(workflow_id=workflow_id, cron_expr=cron_expr, session_id=session_id)
+
+
+def _workflow_schedule_list_impl(enabled_only: bool = False, **kwargs) -> Result:
+    from workflow_scheduler import get_workflow_scheduler
+    scheduler = get_workflow_scheduler()
+    schedules = scheduler.list_schedules(enabled_only=enabled_only)
+    return Result.success({"schedules": schedules, "count": len(schedules)})
+
+
+def _workflow_schedule_delete_impl(schedule_id: str, **kwargs) -> Result:
+    from workflow_scheduler import get_workflow_scheduler
+    scheduler = get_workflow_scheduler()
+    return scheduler.delete_schedule(schedule_id=schedule_id)
 
 
 _registry = None
