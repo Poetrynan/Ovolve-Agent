@@ -77,7 +77,11 @@ jobs:
 
       - name: Install UI dependencies
         working-directory: app/ui
-        run: npm ci
+        run: |
+          npm ci
+          # node-pty@1.0.0 fails on newer MSVC (C2362 goto/cleanup). Pin a fixed release
+          # so tag rebuilds that still declare ^1.0.0 still package successfully.
+          npm install node-pty@1.1.0 --no-save
 
       - name: Build installer (electron-builder)
         working-directory: app/ui
