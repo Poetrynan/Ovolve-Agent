@@ -1,0 +1,20 @@
+[package]
+name = "ovolve_core"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance Rust execution and indexing core for OvolveAgent"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1.10"
+pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
+
+[features]
+default = []
+# Enabled when building the Python extension via maturin:
+#   maturin build --features python-bindings
+python-bindings = ["dep:pyo3"]

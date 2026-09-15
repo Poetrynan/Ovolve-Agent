@@ -1,0 +1,42 @@
+# Ovolve sandbox policy
+#
+# Copy this file to one of:
+#   <workspace>/sandbox-policy.yaml
+#   <workspace>/.ovolve/sandbox-policy.yaml
+#   ~/.ovolve/sandbox-policy.yaml
+# and edit it. The workspace copy wins. No file → these defaults.
+#
+# Access:
+#   rw    read and write
+#   ro    read (and execute) only — the right setting for OS directories
+#   none  no access at all — secrets, metadata, things the agent must not see
+#
+# System directories are `ro`, never `none`: Windows processes have to read
+# DLLs under C:/Windows/System32, and Unix shells have to read /usr/bin.
+# `none` on those paths would break every command, not just the dangerous ones.
+#
+# More-specific paths win: `.git: ro` beats `workspace: rw` for files under .git.
+
+filesystem:
+  workspace: rw
+  tmp: rw
+  .git: rw
+  ~/.ssh: none
+  ~/.gnupg: none
+  /etc: none
+  /System: ro
+  /usr/bin: ro
+  /bin: ro
+  /sbin: ro
+  C:/Windows: ro
+  C:/Program Files: ro
+  C:/Program Files (x86): ro
+
+# Kernel-level CIDR filtering needs root on most desktops, so these ranges are
+# enforced by scanning the command line (and by the OS sandbox where it can
+# actually deny network). `default: allow` is required for pip/npm/git.
+network:
+  default: allow
+  block:
+    - 169.254.169.254/32
+    - 169.254.0.0/16

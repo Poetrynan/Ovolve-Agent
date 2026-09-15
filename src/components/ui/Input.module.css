@@ -1,0 +1,112 @@
+/* Input — Text input, 8px radius, 32px height */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--oa-font-family);
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+/* Label */
+.label {
+  font-size: var(--oa-font-xs);
+  font-weight: 500;
+  color: var(--oa-alias-text-secondary);
+}
+
+/* Input wrapper */
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Input */
+.input {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--oa-alias-border-l2);
+  border-radius: 8px;
+  background: var(--oa-alias-bg-layer-2);
+  color: var(--oa-alias-text-primary);
+  font-family: var(--oa-font-family);
+  font-size: var(--oa-font-s);
+  line-height: 1.4;
+  outline: none;
+  transition: border-color var(--oa-duration-fast) var(--oa-ease-in-out),
+    box-shadow var(--oa-duration-fast) var(--oa-ease-in-out),
+    background var(--oa-duration-fast) var(--oa-ease-in-out);
+}
+
+.input::placeholder {
+  color: var(--oa-alias-text-tertiary);
+  opacity: 0.85;
+}
+
+.input:hover {
+  border-color: var(--oa-alias-border-l3);
+}
+
+.input:focus {
+  border-color: var(--oa-alias-brand-primary);
+  background: var(--oa-alias-bg-base);
+  box-shadow: 0 0 0 3px var(--oa-alias-button-primary-fill);
+}
+
+/* Icon */
+.icon {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--oa-alias-text-tertiary);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.iconLeft {
+  left: 8px;
+}
+
+.iconLeft ~ .input {
+  padding-left: 32px;
+}
+
+.iconRight {
+  right: 8px;
+}
+
+.iconRight ~ .input {
+  padding-right: 32px;
+}
+
+/* Error */
+.hasError .input {
+  border-color: var(--oa-alias-error);
+}
+
+.hasError .input:focus {
+  box-shadow: 0 0 0 3px rgba(var(--oa-static-red-400), 0.15);
+}
+
+.error {
+  font-size: var(--oa-font-xxs);
+  color: var(--oa-alias-error);
+}
+
+.hint {
+  font-size: var(--oa-font-xxs);
+  color: var(--oa-alias-text-caption);
+}
+
+/* Disabled */
+.disabled .input {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--oa-alias-interactive-solid-hover);
+}

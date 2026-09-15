@@ -1,0 +1,23 @@
+{
+  "name": "@oa/goals",
+  "version": "0.1.0",
+  "description": "Goal tracking and management for OvolveAgent",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "license": "Apache-2.0"
+}

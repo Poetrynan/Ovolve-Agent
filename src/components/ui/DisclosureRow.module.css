@@ -1,0 +1,106 @@
+/* DisclosureRow — Collapsible section */
+
+.container {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--oa-alias-text-secondary);
+  font-family: var(--oa-font-family);
+  font-size: var(--oa-font-xs);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--oa-duration-fast) var(--oa-ease-in-out),
+    color var(--oa-duration-fast) var(--oa-ease-in-out);
+}
+
+.header:hover {
+  background: var(--oa-alias-interactive-bg-hover);
+  color: var(--oa-alias-text-primary);
+}
+
+/* Level indentation */
+.level2 .header {
+  padding-left: 20px;
+}
+
+.level3 .header {
+  padding-left: 32px;
+}
+
+/* Chevron */
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform var(--oa-duration-fast) var(--oa-ease-in-out);
+}
+
+.chevron.open {
+  transform: rotate(90deg);
+}
+
+/* Icon */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--oa-alias-text-tertiary);
+}
+
+/* Label */
+.label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--oa-alias-interactive-solid-hover);
+  color: var(--oa-alias-text-tertiary);
+  font-size: var(--oa-font-xxxs);
+  font-weight: 500;
+}
+
+/* Actions */
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--oa-duration-fast) var(--oa-ease-in-out);
+}
+
+.header:hover .actions {
+  opacity: 1;
+}
+
+/* Content */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 1px;
+}

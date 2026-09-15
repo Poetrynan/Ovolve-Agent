@@ -1,0 +1,23 @@
+{
+  "name": "@oa/storage",
+  "version": "0.1.0",
+  "description": "SQLite storage layer for OvolveAgent",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "license": "Apache-2.0"
+}

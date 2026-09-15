@@ -1,0 +1,23 @@
+{
+  "name": "@oa/tracing",
+  "version": "0.1.0",
+  "description": "Langfuse integration layer for OvolveAgent observability",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "license": "Apache-2.0"
+}

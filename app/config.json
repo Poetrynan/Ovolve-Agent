@@ -1,0 +1,127 @@
+{
+  "model": {
+    "provider": "longcat",
+    "model_id": "LongCat-2.0",
+    "api_key": "YOUR_LONGCAT_API_KEY",
+    "base_url": "https://api.longcat.chat/openai/v1",
+    "fallback_model": "",
+    "max_tokens": 131072,
+    "temperature": 0.0,
+    "context_limit": 1000000
+  },
+  "models": [
+    {
+      "provider": "longcat",
+      "model_id": "LongCat-2.0",
+      "api_key": "YOUR_LONGCAT_API_KEY",
+      "base_url": "https://api.longcat.chat/openai/v1",
+      "max_tokens": 131072,
+      "temperature": 0.0,
+      "context_limit": 1000000
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "deepseek-ai/DeepSeek-V4-Flash",
+      "api_key": "YOUR_SILICONFLOW_API_KEY",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "max_tokens": 4096,
+      "context_limit": 131072,
+      "input_price_per_m": 0.0,
+      "output_price_per_m": 0.0
+    }
+  ],
+  "permissions": {
+    "mode": "auto",
+    "auto_confirm_low_risk": true,
+    "require_confirmation_for": [
+      "shell_executor",
+      "python_executor",
+      "git_push",
+      "app_install",
+      "app_uninstall",
+      "process_kill"
+    ]
+  },
+  "storage": {
+    "db_path": "ovolve.db",
+    "max_history": 1000,
+    "compaction_threshold": 100
+  },
+  "workspace": {
+    "root": "./workspace",
+    "git_trust_enabled": true,
+    "path_whitelist": [],
+    "path_blacklist": [
+      "C:\\Windows\\System32"
+    ]
+  },
+  "telemetry": {
+    "enabled": true,
+    "redact_sensitive": true
+  },
+  "security": {
+    "redact_output": true,
+    "redact_mac": true,
+    "path_isolation": true,
+    "anti_scraping": true,
+    "temp_dir": "temp",
+    "output_dir": "output"
+  },
+  "mcp": {
+    "gateway_url": "",
+    "service_id": "",
+    "signature_key": ""
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "./workspace"
+      ],
+      "disabled": false
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "disabled": false
+    }
+  },
+  "bot": {
+    "telegram_token": "",
+    "feishu_app_id": "",
+    "feishu_app_secret": ""
+  },
+  "memory": {
+    "enabled": true,
+    "embedding_model": "text-embedding-3-small",
+    "vector_db_path": "vectors.db",
+    "max_memories": 10000
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "cors_origins": [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:5174",
+      "http://127.0.0.1:5174"
+    ]
+  },
+  "subagent": {
+    "model_roles": {
+      "lite": "",
+      "review": "",
+      "subagent": ""
+    }
+  },
+  "evolution": {
+    "mode": "active"
+  },
+  "agent": {
+    "max_steps_per_turn": 0
+  }
+}

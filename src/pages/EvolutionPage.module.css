@@ -1,0 +1,283 @@
+/* ─── Evolution Proposals (Clean Developer Grade / GitHub PR Style) ─── */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--oa-alias-bg-base);
+  overflow-y: auto;
+  padding: 24px 32px 40px;
+  box-sizing: border-box;
+}
+
+/* ─── Header ─────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--oa-alias-border-l1);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.headerIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--oa-alias-interactive-solid-hover);
+  color: var(--oa-alias-brand-primary);
+  border: 1px solid var(--oa-alias-border-l1);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--oa-alias-text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--oa-alias-text-secondary);
+  margin: 2px 0 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ─── Status Summary Strip ───────────────────────────────── */
+.summaryStrip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background: var(--oa-alias-bg-layer-1);
+  border: 1px solid var(--oa-alias-border-l1);
+  border-radius: 9px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--oa-alias-text-secondary);
+}
+
+.summaryItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.summaryNum {
+  font-weight: 600;
+  color: var(--oa-alias-text-primary);
+}
+
+.summaryDivider {
+  width: 1px;
+  height: 12px;
+  background: var(--oa-alias-border-l2);
+}
+
+/* ─── Filter Tabs ────────────────────────────────────────── */
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.filterBtn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--oa-alias-text-secondary);
+  font-family: var(--oa-font-family);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all 120ms ease;
+}
+
+.filterBtn:hover {
+  background: var(--oa-alias-interactive-bg-hover);
+  color: var(--oa-alias-text-primary);
+}
+
+.filterBtnActive {
+  background: var(--oa-alias-interactive-solid-hover);
+  border-color: var(--oa-alias-border-l1);
+  color: var(--oa-alias-text-primary);
+  font-weight: 600;
+}
+
+/* ─── Proposals List ─────────────────────────────────────── */
+.proposalsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ─── Clean Proposal Card ────────────────────────────────── */
+.proposalCard {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  background: var(--oa-alias-bg-layer-1);
+  border: 1px solid var(--oa-alias-border-l1);
+  border-radius: 10px;
+  transition: border-color 150ms ease;
+}
+
+.proposalCard:hover {
+  border-color: var(--oa-alias-border-l2);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--oa-alias-text-primary);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.cardMeta {
+  font-size: 11.5px;
+  color: var(--oa-alias-text-caption);
+  margin-bottom: 8px;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.statusPending {
+  background: rgba(245, 158, 11, 0.1);
+  color: #D97706;
+}
+
+.statusAccepted {
+  background: rgba(34, 197, 94, 0.1);
+  color: #16A34A;
+}
+
+.statusRejected {
+  background: rgba(239, 68, 68, 0.1);
+  color: #DC2626;
+}
+
+.cardReason {
+  font-size: 12px;
+  color: var(--oa-alias-text-secondary);
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+/* ─── Monospace Diff Box (GitHub Style) ──────────────────── */
+.diffBox {
+  border: 1px solid var(--oa-alias-border-l1);
+  border-radius: 7px;
+  background: var(--oa-alias-bg-base);
+  overflow: hidden;
+  margin-bottom: 12px;
+  font-family: var(--oa-font-family-code);
+  font-size: 11.5px;
+}
+
+.diffFileHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--oa-alias-interactive-solid-hover);
+  border-bottom: 1px solid var(--oa-alias-border-l1);
+  font-size: 11px;
+  color: var(--oa-alias-text-secondary);
+}
+
+.diffLine {
+  display: flex;
+  align-items: flex-start;
+  padding: 3px 10px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.diffLineRemoved {
+  background: rgba(239, 68, 68, 0.06);
+  color: #DC2626;
+}
+
+.diffLineAdded {
+  background: rgba(34, 197, 94, 0.06);
+  color: #16A34A;
+}
+
+.diffSign {
+  display: inline-block;
+  width: 14px;
+  font-weight: 700;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* ─── Card Actions ───────────────────────────────────────── */
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid var(--oa-alias-border-l1);
+}
+
+.impactText {
+  font-size: 11px;
+  color: var(--oa-alias-text-caption);
+}
+
+.btnGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Empty state */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 40px 16px;
+  color: var(--oa-alias-text-caption);
+  text-align: center;
+  font-size: 12px;
+}

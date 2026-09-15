@@ -1,0 +1,131 @@
+/**
+ * index.css — Tailwind directives + base styles
+ * 
+ * This file is the main CSS entry point.
+ * It imports Tailwind's base/components/utilities layers
+ * and adds custom base styles on top of design tokens.
+ */
+
+/* ─── Tailwind Directives ───────────────────────────────── */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base Styles (beyond design-tokens.css) ────────────── */
+
+/* Selection */
+::selection {
+  background: rgba(var(--oa-static-brand-500), 0.2);
+}
+
+/* Focus visible */
+:focus-visible {
+  outline: 2px solid var(--oa-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+/* Disabled */
+[disabled] {
+  cursor: not-allowed;
+}
+
+/* ─── Utility Classes ───────────────────────────────────── */
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Truncate */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Line clamp */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ─── Animations ────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--oa-duration-normal) var(--oa-ease-in-out);
+}
+
+.animate-slide-up {
+  animation: slideUp var(--oa-duration-normal) var(--oa-ease-in-out);
+}
+
+.animate-slide-down {
+  animation: slideDown var(--oa-duration-normal) var(--oa-ease-in-out);
+}
+
+/* ─── Scrollbar (Firefox) ───────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--oa-alias-text-dimmed) transparent;
+}
+
+/* ─── Electron Window Regions ───────────────────────────── */
+/* Prevent text selection on UI chrome */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Drag region for custom titlebar */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+

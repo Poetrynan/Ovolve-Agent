@@ -1,0 +1,37 @@
+jsonschema>=4.20.0
+psutil>=5.9.0
+croniter>=2.0.0
+aiohttp>=3.9.0
+websockets>=12.0
+cryptography>=42.0.0
+selenium>=4.15.0
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+# 注意：这里刻意**不**引入 pytest-aiohttp。它的 aiohttp_client fixture 曾被
+# test_image_route.py / test_p5_api_auth.py 使用，但本机和 CI
+# （.github/workflows/ci.yml 只装 pytest pytest-asyncio aiohttp）都没装它，
+# 结果是 19 条断言以 ERROR 收场——看着像"没东西可跑"，实际是安全断言从未执行。
+# 两个文件已改用 aiohttp 自带的 aiohttp.test_utils.TestClient，无需此依赖。
+python-dotenv>=1.0.0
+
+# Layer 2 语义记忆（可选）。缺失时 memory_layer 自动退回关键词打分，
+# 后端照常启动 —— 见 embedder.py 的降级契约。
+#
+# 首选 ONNX Runtime 推理（fastembed）：~50MB 运行时，无 PyTorch。
+# 模型 BAAI/bge-base-zh-v1.5（768 维中文检索标杆，~400MB）首次使用时自动下载。
+# fastembed 内置目录没收录 base-zh，embedder.py 用 add_custom_model 注册，
+# ONNX 权重源自 Xenova/bge-base-zh-v1.5。需要 0.8+ 才有 add_custom_model。
+fastembed>=0.8.0
+# 兜底：若环境里已有 PyTorch 版 sentence-transformers 也能用（embedder 自动探测）。
+# 默认不装 —— 想省 1-2GB 就只留 fastembed。
+# sentence-transformers>=2.2.2
+#
+# 完全不想要语义记忆：设 OVOLVE_DISABLE_EMBEDDINGS=1
+
+# Layer 3 MCP 服务器（官方 SDK）—— v3 宪法文档指定
+# 上限锁 <2 —— mcp 2.0（2026-07-28 规范）把 FastMCP 移到别处、API 大改。
+# 官方文档明确建议未迁移前保持 <2（"keep a <2 upper bound until you've migrated"）。
+# 我们现在用的是 v1 的 FastMCP 装饰器 API，暂不追 v2。
+mcp>=1.20,<2
+
+

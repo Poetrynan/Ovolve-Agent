@@ -1,0 +1,1054 @@
+/* Google Fonts — AI-Native pairing: Inter (body) + Space Grotesk (display) + JetBrains Mono (code).
+   ui-ux-pro-max: dark, cinematic, technical, premium for AI dashboards. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..800;1,14..32,400..600&family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+/* KaTeX default styles — required so math renders as math and not raw HTML. */
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══ Glassmorphism Ultra-Clean Syntax Highlighting Palette ═══
+   hljs token classes with bespoke Apple/Linear ultra-clean tokens,
+   designed specifically for frosted glass surfaces in light and dark modes. */
+@layer base {
+  .hljs { color: hsl(var(--foreground)); background: transparent; }
+
+  /* Comments & Docs */
+  .hljs-comment, .hljs-quote {
+    color: hsl(215 16% 47%);
+    font-style: italic;
+  }
+  .dark .hljs-comment, .dark .hljs-quote {
+    color: hsl(215 20% 55%);
+    font-style: italic;
+  }
+
+  /* Keywords, Storage, Specifiers */
+  .hljs-keyword, .hljs-selector-tag, .hljs-doctag {
+    color: hsl(250 85% 60%);
+    font-weight: 600;
+  }
+  .dark .hljs-keyword, .dark .hljs-selector-tag, .dark .hljs-doctag {
+    color: hsl(252 95% 75%);
+    font-weight: 600;
+  }
+
+  /* Functions & Method Definitions / Invocations */
+  .hljs-title.hljs-function, .hljs-title.function_, .hljs-function {
+    color: hsl(199 89% 42%);
+    font-weight: 600;
+  }
+  .dark .hljs-title.hljs-function, .dark .hljs-title.function_, .dark .hljs-function {
+    color: hsl(198 93% 60%);
+    font-weight: 600;
+  }
+
+  /* Classes, Types, Interfaces, Structs */
+  .hljs-title.class_, .hljs-type, .hljs-class {
+    color: hsl(38 92% 45%);
+    font-weight: 600;
+  }
+  .dark .hljs-title.class_, .dark .hljs-type, .dark .hljs-class {
+    color: hsl(42 96% 62%);
+    font-weight: 600;
+  }
+
+  /* Strings & String Templates */
+  .hljs-string, .hljs-meta-string {
+    color: hsl(158 64% 38%);
+  }
+  .dark .hljs-string, .dark .hljs-meta-string {
+    color: hsl(156 72% 55%);
+  }
+
+  /* Numbers, Constants, Booleans */
+  .hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet {
+    color: hsl(346 77% 48%);
+    font-weight: 500;
+  }
+  .dark .hljs-number, .dark .hljs-literal, .dark .hljs-symbol, .dark .hljs-bullet {
+    color: hsl(346 89% 68%);
+    font-weight: 500;
+  }
+
+  /* Variables, Properties & Attributes */
+  .hljs-variable, .hljs-template-variable, .hljs-attr, .hljs-property {
+    color: hsl(215 25% 27%);
+  }
+  .dark .hljs-variable, .dark .hljs-template-variable, .dark .hljs-attr, .dark .hljs-property {
+    color: hsl(210 30% 88%);
+  }
+
+  /* Tags (HTML/XML/JSX) */
+  .hljs-tag, .hljs-name {
+    color: hsl(221 83% 53%);
+    font-weight: 500;
+  }
+  .dark .hljs-tag, .dark .hljs-name {
+    color: hsl(217 91% 68%);
+    font-weight: 500;
+  }
+
+  /* Regex & Meta / Preprocessor */
+  .hljs-regexp, .hljs-meta {
+    color: hsl(292 84% 50%);
+  }
+  .dark .hljs-regexp, .dark .hljs-meta {
+    color: hsl(292 90% 72%);
+  }
+
+  /* Built-in Objects & Global Constants */
+  .hljs-built_in, .hljs-builtin-name {
+    color: hsl(186 100% 33%);
+    font-weight: 500;
+  }
+  .dark .hljs-built_in, .dark .hljs-builtin-name {
+    color: hsl(186 95% 55%);
+    font-weight: 500;
+  }
+
+  /* Modifiers & Formatting */
+  .hljs-emphasis { font-style: italic; }
+  .hljs-strong { font-weight: 700; }
+  .hljs-addition { background: rgba(16, 185, 129, 0.12); color: hsl(158 64% 38%); }
+  .hljs-deletion { background: rgba(244, 63, 94, 0.12); color: hsl(346 77% 48%); }
+}
+
+@layer base {
+  /* ═══ Glassmorphism + Fluid Aura Design Tokens ═══
+     极简磨砂流光：低饱和度极光氛围光 + 20px 毛玻璃倒角高光 + 呼吸感排版 */
+  :root {
+    --scrollbar-w: 10px;
+
+    /* Canvas & Surfaces (#F8F9FA 纯净灰白基底) */
+    --background: 210 20% 98%;           /* #f8f9fa 纯净灰白画布底板 */
+    --foreground: 222 47% 11%;           /* #0f172a 高质感石墨深色文字 */
+    --card: 0 0% 100%;                   /* 半透纯白内容卡片 */
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Brand Accent: Ethereal Aurora Blue */
+    --primary: 217 91% 60%;              /* #2563eb 标志性极光蓝 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 16% 47%;            /* #64748b 次级文字 */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 20% 95%;                /* #f1f5f9 浅灰底衬 */
+    --muted-foreground: 215 16% 55%;     /* #8e9eb3 辅助说明 */
+    --accent: 217 91% 97%;               /* #eff6ff 极光微光 */
+    --accent-foreground: 217 91% 50%;
+
+    /* Specular Glass Borders & Rings */
+    --border: 220 13% 86%;               /* 1px 具有明确对比度的精致高光描边 */
+    --input: 220 13% 86%;
+    --ring: 217 91% 60%;
+    --radius: 0.875rem;
+
+    /* Semantic Status */
+    --success: 152 69% 36%;             /* #16a34a */
+    --warning: 38 92% 50%;              /* #f59e0b */
+    --destructive: 0 84% 60%;           /* #ef4444 */
+    --info: 217 91% 60%;                /* #2563eb */
+
+    /* Frosted Sidebar */
+    --sidebar-bg: 210 25% 98%;          /* 极简磨砂侧栏 */
+    --sidebar-fg: 222 47% 11%;
+    --sidebar-active: 217 91% 60%;
+
+    /* Spring tokens */
+    --spring-default: 1.0;
+    --spring-bounce: 0.8;
+    --spring-response: 0.35s;
+
+    /* Token usage chart colours */
+    --color-usage-chart-1: 217 91% 60%;  /* primary */
+    --color-usage-chart-2: 152 69% 36%;  /* success */
+    --color-usage-chart-3: 38 92% 50%;   /* warning */
+    --color-usage-chart-4: 0 84% 60%;    /* destructive */
+
+    /* Easing tokens */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+    /* Material blur & Glass recipes */
+    --blur-amount: 20px;
+    --glass-opacity: 0.65;
+    --mc-shadow-1: 0 2px 8px rgba(0, 0, 0, 0.03);
+    --mc-shadow-2: 0 8px 30px rgba(0, 0, 0, 0.04);
+    --mc-shadow-3: 0 16px 48px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ═══ Dark Mode — Cosmic Obsidian & Translucent Fluid Aura ═══
+     深空曜黑 (#0D0F12) + 24px 极光磨砂玻璃 + 物理玻璃倒角高光 */
+  .dark {
+    --scrollbar-w: 8px;
+    --background: 220 18% 6%;            /* #0d0f12 深空黑夜灰纯净画布 */
+    --foreground: 0 0% 98%;              /* #fafafa 极光白高清晰度文字 */
+    --card: 225 15% 10%;                 /* 深色半透毛玻璃卡片 */
+    --card-foreground: 0 0% 98%;
+    --popover: 225 15% 11%;              /* 磨砂浮层 */
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 217 91% 60%;              /* #3b82f6 标志性极光蓝 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 65%;             /* #a1a1aa 次级文字 */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 225 12% 14%;                /* #1e2129 浅暗衬底 */
+    --muted-foreground: 220 9% 65%;      /* #9ba3af 辅助说明 */
+    --accent: 217 91% 60% / 0.18;
+    --accent-foreground: 217 91% 75%;
+
+    --border: 225 10% 18%;               /* 细微晶透边框基准 */
+    --input: 225 10% 18%;
+    --ring: 217 91% 60%;
+
+    --success: 142 71% 45%;              /* #22c55e */
+    --warning: 38 92% 50%;               /* #f59e0b */
+    --destructive: 0 84% 60%;            /* #ef4444 */
+    --info: 217 91% 60%;                 /* #3b82f6 */
+
+    --sidebar-bg: 225 16% 7%;            /* 深空极简磨砂侧栏 */
+    --sidebar-fg: 0 0% 98%;
+    --sidebar-active: 217 91% 60%;
+
+    --glass-opacity: 0.60;
+    --mc-shadow-1: 0 4px 14px rgba(0, 0, 0, 0.35);
+    --mc-shadow-2: 0 12px 36px rgba(0, 0, 0, 0.50);
+    --mc-shadow-3: 0 24px 64px rgba(0, 0, 0, 0.70);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    font-optical-sizing: auto;
+    font-feature-settings: 'cv05', 'ss01';  /* Inter: single-story a, alt digits */
+    transition: background-color 0.3s ease, color 0.3s ease;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Apple: optical sizing — tracking is size-specific */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    letter-spacing: -0.02em;  /* tighten large headings */
+    line-height: 1.1;
+  }
+
+  code, pre, kbd, samp {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'PingFang SC', 'Microsoft YaHei', monospace;
+  }
+
+  p, span, li, td, th, input, textarea, button {
+    letter-spacing: 0;  /* body text: no tracking adjustment */
+    line-height: 1.5;
+  }
+
+  /* Pointer-down feedback is COLOUR, never scale.
+     There used to be a global `:active { transform: scale(0.97) }` here. A
+     whole-element shrink-and-spring on every click reads as cheap: it fires on
+     navigation rows and toggles where nothing was "committed", it fights any
+     transform a child owns, and at 100+ clicks a session it is the kind of
+     motion that stops being feedback and becomes a tic. Buttons still respond
+     — via their own hover/active background and brightness — which is
+     instantaneous and doesn't move the layout. */
+
+  /* Apple: visible focus rings */
+  :focus-visible {
+    outline: 3px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  /* ── Off-screen message rows: skip layout/paint ────────────────────────────
+     `content-visibility: auto` tells the engine not to lay out or paint a row
+     while it is outside the viewport. A 500-message transcript therefore costs
+     roughly what the dozen visible rows cost, instead of all 500.
+
+     This is deliberately NOT node-removing virtualisation. The rows stay in the
+     DOM, which is the whole point: TurnRail jumps to a turn with
+     `scroller.querySelector('[data-turn-index=…]')` and highlights the current
+     turn with an IntersectionObserver over `[data-role="user"]`. Both look up
+     real nodes, so a library that unmounts off-screen rows would silently break
+     "click a turn to jump there" — along with select-all-and-copy and the
+     browser's own find-in-page. `content-visibility` keeps all of that working
+     and still skips the expensive part.
+
+     `contain-intrinsic-size: auto 8rem` is the placeholder height used before a
+     row has ever been rendered. The `auto` keyword makes the engine remember
+     each row's real height once measured, so the scrollbar settles to exact
+     after the first pass instead of guessing forever.
+
+     One accepted trade-off: `content-visibility` implies paint containment, so a
+     bubble's `shadow-sm` is clipped at the row's box. At 5% opacity over 3px
+     that is not perceptible; being able to keep the DOM intact is worth it. */
+  .message-list > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 8rem;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Hide the scrollbar while keeping the element scrollable.
+     Was referenced by components long before it existed anywhere in CSS, so
+     those lists were quietly rendering a 10px track that ate into their
+     padding. Kept keyboard- and wheel-scrollable — this hides the indicator,
+     it does not disable scrolling. */
+  .no-scrollbar {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* legacy Edge */
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+
+  /* ═══ Glassmorphism + Fluid Aura System ═══ */
+
+  /* 1) Translucent frosted glass: For Header, Floating Pill, Composer capsule */
+  .mc-glass-soft, .glass {
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 10px 32px 0 rgba(0, 0, 0, 0.05), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+  }
+  .dark .mc-glass-soft, .dark .glass {
+    backdrop-filter: blur(24px) saturate(190%);
+    -webkit-backdrop-filter: blur(24px) saturate(190%);
+    background: rgba(18, 20, 26, 0.70);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 16px 44px 0 rgba(0, 0, 0, 0.55), inset 0 1px 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  /* 2) Bento Glass Cards: For SidePanel, Chat suggestion cards, code modules */
+  .bento-glass-card {
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background: rgba(255, 255, 255, 0.80);
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.04), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+    transition: all 200ms var(--ease-out);
+  }
+  .bento-glass-card:hover {
+    background: rgba(255, 255, 255, 0.92);
+    border-color: rgba(37, 99, 235, 0.35);
+    box-shadow: 0 12px 36px 0 rgba(37, 99, 235, 0.08), inset 0 1px 1px 0 rgba(255, 255, 255, 1);
+    transform: translateY(-1px);
+  }
+  .dark .bento-glass-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.40), inset 0 1px 1px 0 rgba(255, 255, 255, 0.10);
+  }
+  .dark .bento-glass-card:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(56, 189, 248, 0.40);
+    box-shadow: 0 14px 42px 0 rgba(0, 0, 0, 0.55), 0 0 20px 0 rgba(56, 189, 248, 0.15), inset 0 1px 1px 0 rgba(255, 255, 255, 0.18);
+    transform: translateY(-1px);
+  }
+
+  /* 3) Glass Pill & Prompt Chips */
+  .glass-pill {
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+    transition: all 180ms var(--ease-out);
+  }
+  .glass-pill:hover {
+    background: rgba(255, 255, 255, 0.98);
+    border-color: rgba(37, 99, 235, 0.45);
+    box-shadow: 0 4px 16px 0 rgba(37, 99, 235, 0.12), inset 0 1px 0 0 rgba(255, 255, 255, 1);
+  }
+  .dark .glass-pill {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.30), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+  }
+  .dark .glass-pill:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(56, 189, 248, 0.40);
+    box-shadow: 0 6px 18px 0 rgba(0, 0, 0, 0.45), 0 0 14px 0 rgba(56, 189, 248, 0.20), inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+  }
+
+  /* 4) High-readability dense content surface */
+  .mc-content-surface {
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(226, 232, 240, 0.7);
+    box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.03), inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+  }
+  .dark .mc-content-surface {
+    backdrop-filter: blur(20px) saturate(170%);
+    -webkit-backdrop-filter: blur(20px) saturate(170%);
+    background: rgba(24, 26, 32, 0.80);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+  }
+
+  /* 5) Quiet floating popovers */
+  .mc-glass-floating {
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.80);
+    box-shadow: 0 16px 48px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 1);
+  }
+  .dark .mc-glass-floating {
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    background: rgba(20, 22, 28, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 20px 60px 0 rgba(0, 0, 0, 0.65), inset 0 1px 0 0 rgba(255, 255, 255, 0.16);
+  }
+
+  /* 6) Fluid Aura Orb Motion Keyframes */
+  @keyframes aura-slow-1 {
+    0%, 100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    50% {
+      transform: translate(45px, 35px) scale(1.12);
+    }
+  }
+
+  @keyframes aura-slow-2 {
+    0%, 100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    50% {
+      transform: translate(-40px, 30px) scale(1.08);
+    }
+  }
+
+  @keyframes aura-slow-3 {
+    0%, 100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    50% {
+      transform: translate(30px, -40px) scale(1.10);
+    }
+  }
+
+  @keyframes aura-slow-4 {
+    0%, 100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    50% {
+      transform: translate(-25px, -25px) scale(1.15);
+    }
+  }
+
+  .animate-aura-slow-1 {
+    animation: aura-slow-1 18s ease-in-out infinite;
+  }
+  .animate-aura-slow-2 {
+    animation: aura-slow-2 22s ease-in-out infinite;
+  }
+  .animate-aura-slow-3 {
+    animation: aura-slow-3 20s ease-in-out infinite;
+  }
+  .animate-aura-slow-4 {
+    animation: aura-slow-4 16s ease-in-out infinite;
+  }
+
+  /* 7) Border Beam / Ray Scan Animation for AI Generating state */
+  @keyframes border-beam {
+    100% {
+      offset-distance: 100%;
+    }
+  }
+
+  .animate-border-beam {
+    animation: border-beam var(--duration, 4s) infinite linear;
+  }
+
+  /* Apple: vibrancy text over glass */
+  .glass-text {
+    color: hsl(var(--foreground));
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+
+  /* Apple: hover lift with spring.
+     Gated behind a real pointer — touch devices fire :hover on tap, which
+     leaves the element stuck in its lifted state after the finger lifts. */
+  .hover-lift {
+    transition: transform 200ms var(--ease-out), box-shadow 200ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .hover-lift:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px hsl(var(--foreground) / 0.08);
+    }
+  }
+
+  /* Press feedback — opacity only, no scale. Kept as an opt-in class for
+     elements that have no background of their own to darken (bare icon
+     buttons), where without it a click produces no visible response at all. */
+  .press-feedback {
+    transition: opacity 100ms var(--ease-out);
+  }
+  .press-feedback:active {
+    opacity: 0.72;
+  }
+
+  /* `.no-press-scale` lived here to opt a subtree OUT of the global
+     pointer-down scale. The global rule is gone, so the opt-out has nothing to
+     opt out of and was removed with it. */
+
+  /* Apple restraint: elevation over bloom. A soft neutral lift, never a neon halo. */
+  .glow-primary {
+    box-shadow: 0 4px 16px hsl(var(--foreground) / 0.14);
+  }
+  .glow-accent {
+    box-shadow: 0 4px 16px hsl(var(--foreground) / 0.14);
+  }
+
+  /* Apple restraint: a single quiet accent — flat, no candy gradient.
+     (.text-gradient / .bg-gradient-brand kept as plain primary for back-compat.) */
+  .text-gradient {
+    color: hsl(var(--primary));
+  }
+  .bg-gradient-brand {
+    background: hsl(var(--primary));
+  }
+
+  /* Focus-within ring that feels like the input "wakes up" */
+  .input-focus {
+    transition: box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out);
+  }
+  .input-focus:focus-within {
+    border-color: hsl(var(--ring) / 0.6);
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15), 0 2px 8px hsl(var(--primary) / 0.12);
+  }
+
+  /* Apple: rubber-band boundary */
+  .rubber-band {
+    transition: transform 0.1s ease-out;
+  }
+
+  /* ── Credibility micro-interactions (P0-9) ──────────────────────────────
+     Small, honest motion that signals "the system is doing real work",
+     never decorative sparkle. Each earns its place by telling the user
+     something they'd otherwise have to guess. */
+
+  /* Skeleton / warmup shimmer: a light sweeps across a placeholder to say
+     "content is coming", distinct from a spinner's "working, no idea how
+     long". A single quiet band, not a rainbow. */
+  @keyframes cred-shimmer {
+    0%   { background-position: -150% 0; }
+    100% { background-position: 250% 0; }
+  }
+  .shimmer {
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--muted) / 0) 0%,
+      hsl(var(--foreground) / 0.08) 50%,
+      hsl(var(--muted) / 0) 100%
+    );
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: cred-shimmer 1.6s var(--ease-out) infinite;
+  }
+  /* Text-only shimmer for "warming up the tool…" labels: the words fade in
+     and out of emphasis rather than a background sweep, which reads better on
+     a single short line. */
+  @keyframes cred-text-pulse {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 1; }
+  }
+  .text-shimmer {
+    animation: cred-text-pulse 1.4s ease-in-out infinite;
+  }
+
+
+
+  /* File-write progress slide: a thin bar sweeps left→right under a
+     file-write row so a multi-second write doesn't look frozen. */
+  @keyframes cred-progress-slide {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  .progress-slide {
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-slide::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: 25%;
+    background: hsl(var(--primary) / 0.6);
+    border-radius: 2px;
+    animation: cred-progress-slide 1.2s var(--ease-out) infinite;
+  }
+
+  /* ── E1 credibility micro-interactions ────────────────────────────────
+     Four surfaces that today read as static when they should read as alive
+     while a subagent is thinking, a goal is under review, or a skill is
+     armed in the composer. Each animation is a *signal*, not decoration —
+     it turns on when meaningful state changes and turns off the moment the
+     state settles, so the user can trust that motion == something is
+     happening. All obey prefers-reduced-motion below. */
+
+  /* 1) Skeleton sweep — a soft light band travels across a placeholder card.
+     Distinct from the plain pulse: sweep says "server just acknowledged
+     your click, response inbound". Uses a mask so the base muted color is
+     untouched — no hue shift beside the real content that's loading in. */
+  @keyframes cred-skel-sweep {
+    0%   { transform: translateX(-60%); }
+    100% { transform: translateX(160%); }
+  }
+  .skeleton-sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--foreground) / 0.10) 45%,
+      hsl(var(--foreground) / 0.14) 50%,
+      hsl(var(--foreground) / 0.10) 55%,
+      transparent 100%
+    );
+    transform: translateX(-60%);
+    animation: cred-skel-sweep 1.6s var(--ease-out) infinite;
+    pointer-events: none;
+  }
+
+  /* 2) Subagent avatar breathe — an off-primary halo that grows and fades on
+     a slow cycle, only while the subagent is actively working. Not a spin,
+     not a bounce: a breath, so it reads calm rather than agitated. Sits on
+     an ::after pseudo-element so the avatar's own layout never shifts. */
+  @keyframes cred-agent-breathe {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 0.28;
+    }
+    50% {
+      transform: scale(1.18);
+      opacity: 0.55;
+    }
+  }
+  .agent-breathe {
+    position: relative;
+  }
+  .agent-breathe::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    background: radial-gradient(
+      circle at center,
+      hsl(var(--primary) / 0.55) 0%,
+      hsl(var(--primary) / 0) 68%
+    );
+    animation: cred-agent-breathe 2.4s ease-in-out infinite;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  /* 3) Goal review pulse — a goal card whose verification is pending should
+     tell the user "the model is grading itself right now". A slow inset border
+     pulse only: no outer spread and no accent hue, because a coloured glow on
+     every queued card reads as an alert rather than a progress cue. */
+  @keyframes cred-goal-pulse {
+    0%, 100% { box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.14); }
+    50%      { box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.3); }
+  }
+  .goal-review-pulse {
+    animation: cred-goal-pulse 2.2s ease-in-out infinite;
+  }
+
+  /* 4) 审批面板的独立配色曾住在这里。审批现在是工具卡内联的一条按钮栏
+     （ToolCallCard 的 ApprovalBar），走的是卡片自身的风险配色，不再需要
+     弹窗级的 ring/wash 令牌，随唯一消费者 PermissionDialog 一并删除。 */
+
+  /* 5) Thinking budget at MAX — the rail's glow lives in section 7
+     (thought-max-glow); this block keeps the numbering honest. */
+
+  /* 6) Composer dial capsules — spectacle lives on the pill in the bar, not
+     only inside the popover. Dragging to the top stop turns on a flowing border
+     + soft shimmer; crossing into MAX gets a one-shot pop. Permission "full"
+     reuses the warning variant. */
+  @keyframes composer-capsule-border-flow {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+  }
+  @keyframes composer-capsule-shimmer {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+  }
+  @keyframes composer-capsule-gauge {
+    0%, 100% { transform: scaleY(1); opacity: 0.85; }
+    50%      { transform: scaleY(1.18); opacity: 1; }
+  }
+  @keyframes composer-capsule-icon-pulse {
+    0%, 100% { filter: drop-shadow(0 0 0 hsl(var(--primary) / 0)); }
+    50%      { filter: drop-shadow(0 0 5px hsl(var(--primary) / 0.45)); }
+  }
+  @keyframes composer-capsule-pop {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.055); }
+    100% { transform: scale(1); }
+  }
+  .composer-capsule-energized {
+    position: relative;
+    overflow: hidden;
+  }
+  .composer-capsule-energized::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0.35;
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.22) 45%,
+      transparent 90%
+    );
+    background-size: 220% 100%;
+    animation: composer-capsule-border-flow 2.4s linear infinite;
+  }
+  .composer-capsule-energized--primary {
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.28), 0 0 14px hsl(var(--primary) / 0.12);
+    animation: composer-capsule-shimmer 2.2s ease-in-out infinite;
+  }
+  .composer-capsule-energized--warning {
+    box-shadow: 0 0 0 1px hsl(var(--warning) / 0.32), 0 0 12px hsl(var(--warning) / 0.1);
+  }
+  .composer-capsule-energized--warning::before {
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      hsl(var(--warning) / 0.2) 45%,
+      transparent 90%
+    );
+  }
+  .composer-capsule-gauge-bar {
+    animation: composer-capsule-gauge 1.6s ease-in-out infinite;
+    transform-origin: bottom center;
+  }
+  .composer-capsule-icon-pulse {
+    animation: composer-capsule-icon-pulse 1.8s ease-in-out infinite;
+  }
+  .composer-capsule-pop {
+    animation: composer-capsule-pop 420ms var(--ease-out);
+  }
+
+  /* 7) Thought dial — Clean White Track with Rhythmic Energy Surge at MAX.
+     The track is a crisp white/light capsule with smooth light-blue fills.
+     ONLY at MAX does it burst into vibrant rhythmic energy with sparkling
+     square quanta and sweeping cadence! */
+  .thought-dial-track {
+    background: #ffffff;
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+  }
+  .dark .thought-dial-track {
+    background: rgba(15, 23, 42, 0.85);
+    border-color: rgba(51, 65, 85, 0.9);
+  }
+
+  .thought-dial-track--max {
+    border-color: rgba(56, 189, 248, 0.8);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05), 0 0 16px rgba(56, 189, 248, 0.45);
+    animation: thought-max-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes thought-max-pulse {
+    0%, 100% {
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+    }
+    50% {
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.65), 0 0 4px rgba(255, 255, 255, 0.8);
+    }
+  }
+
+  /* Smooth Clean Fills for Normal Levels */
+  .thought-dial-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: 9999px;
+  }
+  .thought-dial-fill--low {
+    background: linear-gradient(90deg, #7dd3fc 0%, #38bdf8 100%);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+  }
+  .thought-dial-fill--high {
+    background: linear-gradient(90deg, #38bdf8 0%, #2563eb 100%);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+  }
+  /* MAX: Dynamic Fluid Energy Surge Fill */
+  .thought-dial-fill--max {
+    background: linear-gradient(
+      110deg,
+      #0284c7 0%,
+      #38bdf8 25%,
+      #60a5fa 50%,
+      #38bdf8 75%,
+      #0284c7 100%
+    );
+    background-size: 200% 100%;
+    animation: thought-max-flow 2.0s linear infinite;
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.6), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  }
+  @keyframes thought-max-flow {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+  }
+
+  /* White Pill Thumb */
+  .thought-dial-thumb {
+    position: absolute;
+    top: 2.5px;
+    bottom: 2.5px;
+    width: 16px;
+    border-radius: 9999px;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25), 0 0 6px rgba(56, 189, 248, 0.4);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    pointer-events: none;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .thought-dial-thumb--max {
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3), 0 0 12px 2px rgba(56, 189, 248, 0.85), 0 0 4px #ffffff;
+    border-color: rgba(255, 255, 255, 0.95);
+  }
+
+  .thought-dial-panel-head {
+    background: rgba(56, 189, 248, 0.05);
+  }
+  .thought-dial-panel--max {
+    border-color: rgba(56, 189, 248, 0.4);
+    box-shadow: 0 4px 24px rgba(56, 189, 248, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* Reduced motion = fewer and gentler, NOT zero.
+   Opacity/colour transitions aid comprehension and stay; positional and scaling
+   motion is what triggers vestibular discomfort, so that is what gets dropped.
+   Blanket-zeroing every duration (the common snippet) also freezes loading
+   spinners, which then read as "hung" rather than "working". */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-property: opacity, color, background-color, border-color, box-shadow,
+                         fill, stroke !important;
+    transition-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Progress feedback must keep moving — the user needs to know work is ongoing.
+     Slowed down so it is calmer than the default. */
+  .animate-spin {
+    animation-iteration-count: infinite !important;
+    animation-duration: 1.2s !important;
+  }
+  .animate-pulse,
+  .animate-pulse-dot {
+    animation-iteration-count: infinite !important;
+  }
+
+  /* Progress-signalling micro-interactions keep looping — freezing them would
+     turn "still working" into "hung". The shimmer/slide are slowed so they
+     read as calm rather than urgent. */
+  .shimmer,
+  .text-shimmer,
+  .progress-slide::after {
+    animation-iteration-count: infinite !important;
+    animation-duration: 2s !important;
+  }
+
+  /* E1: the three state-signalling loops also keep going — each one is the
+     only cue that a subagent is thinking / a goal is being graded / content
+     is inbound. Slowed, and the breathe drops its scale component (that's
+     the part that causes vestibular discomfort) so only the opacity fade
+     remains. */
+  .skeleton-sweep::after,
+  .goal-review-pulse {
+    animation-iteration-count: infinite !important;
+    animation-duration: 2.6s !important;
+  }
+  .agent-breathe::after {
+    animation-iteration-count: infinite !important;
+    animation-duration: 3s !important;
+    animation-name: cred-agent-breathe-calm !important;
+  }
+  @keyframes cred-agent-breathe-calm {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 0.5; }
+  }
+
+  .hover-lift:hover {
+    transform: none;
+  }
+}
+
+/* Apple: reduced transparency — solid surfaces */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: hsl(var(--card));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-color: hsl(var(--border));
+  }
+}
+
+/* Apple: more contrast */
+@media (prefers-contrast: more) {
+  .glass {
+    background: hsl(var(--card));
+    border-width: 2px;
+    border-color: hsl(var(--foreground) / 0.5);
+  }
+
+  :where(button, a, [role="button"]) {
+    border-width: 2px;
+  }
+}
+
+/* Custom scrollbar — slim, theme-aware, hover reveal.
+   Width comes from `--scrollbar-w` so scroll panes reserving a stable gutter can
+   compensate for exactly the same number of pixels. */
+::-webkit-scrollbar {
+  width: var(--scrollbar-w);
+  height: var(--scrollbar-w);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.45);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+/* Slimmer on dark — the width itself comes from `--scrollbar-w` in `.dark`, so
+   the reserved gutter shrinks by the same amount and nothing drifts. */
+.dark ::-webkit-scrollbar-thumb {
+  border-width: 0;
+  background: hsl(var(--muted));
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+/* Apple: edge fade instead of hard dividers */
+.edge-fade-top {
+  mask-image: linear-gradient(to bottom, transparent 0, black 12px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 12px);
+}
+
+/* ═══ Ovolve Pure Color O Loader Animation ═══ */
+@keyframes ovolve-o-draw {
+  0% {
+    stroke-dashoffset: 360;
+  }
+  50%, 65% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -360;
+  }
+}
+
+.animate-ovolve-o {
+  animation: ovolve-o-draw var(--ovolve-o-duration, 2.4s) cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ovolve-o {
+    animation-duration: 6s !important;
+    animation-timing-function: ease-in-out !important;
+  }
+}
+
+/* ═══ High-Contrast Tactile Inline Code & Chips ═══ */
+code:not(pre code) {
+  background-color: rgba(15, 23, 42, 0.07);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  color: hsl(var(--foreground));
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 0.825em;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.dark code:not(pre code) {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f1f5f9;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* ═══ Universal Clockwise Rotation on Click for All Refresh & Reload Icons ═══
+   Ensures that whenever any user clicks any refresh/rotate icon (RefreshCw, RotateCw, etc.),
+   the icon provides immediate, ultra-smooth clockwise rotating tactile feedback. */
+button .lucide-refresh-cw,
+button .lucide-rotate-cw,
+button .lucide-refresh-ccw,
+button .lucide-rotate-ccw,
+[role="button"] .lucide-refresh-cw,
+[role="button"] .lucide-rotate-cw,
+[role="button"] .lucide-refresh-ccw,
+[role="button"] .lucide-rotate-ccw,
+.clickable-refresh svg,
+.btn-refresh svg {
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center;
+}
+
+button:hover .lucide-refresh-cw,
+button:hover .lucide-rotate-cw,
+[role="button"]:hover .lucide-refresh-cw,
+[role="button"]:hover .lucide-rotate-cw {
+  transform: rotate(45deg);
+}
+
+button:active .lucide-refresh-cw,
+button:active .lucide-rotate-cw,
+button:active .lucide-refresh-ccw,
+button:active .lucide-rotate-ccw,
+[role="button"]:active .lucide-refresh-cw,
+[role="button"]:active .lucide-rotate-cw,
+[role="button"]:active .lucide-refresh-ccw,
+[role="button"]:active .lucide-rotate-ccw {
+  transform: rotate(360deg);
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}

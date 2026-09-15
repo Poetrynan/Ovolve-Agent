@@ -1,0 +1,322 @@
+/* ============================================================
+   OvolveAgent Design Tokens
+   OvolveAgent design tokens
+   ============================================================ */
+
+/* ── Static Palette ────────────────────────────────────── */
+:root {
+  /* Neutral Bluish */
+  --oa-static-neutral-bluish-50: 249, 250, 251;
+  --oa-static-neutral-bluish-75: 241, 243, 245;
+  --oa-static-neutral-bluish-100: 233, 236, 241;
+  --oa-static-neutral-bluish-200: 225, 229, 238;
+  --oa-static-neutral-bluish-300: 207, 211, 214;
+  --oa-static-neutral-bluish-400: 173, 178, 184;
+  --oa-static-neutral-bluish-600: 129, 133, 140;
+  --oa-static-neutral-bluish-700: 97, 102, 107;
+  --oa-static-neutral-bluish-750: 67, 69, 74;
+  --oa-static-neutral-bluish-800: 53, 54, 56;
+  --oa-static-neutral-bluish-850: 44, 44, 46;
+  --oa-static-neutral-bluish-875: 35, 35, 36;
+  --oa-static-neutral-bluish-900: 27, 27, 28;
+  --oa-static-neutral-bluish-950: 21, 21, 23;
+  --oa-static-neutral-bluish-1000: 15, 17, 21;
+
+  /* Brand & accent colors */
+  --oa-static-brand-400: 103, 158, 254;
+  --oa-static-brand-500: 65, 118, 230;
+  --oa-static-accent-coral: 217, 119, 87;
+  --oa-static-accent-cyan: 56, 189, 248;
+
+  /* Semantic */
+  --oa-static-red-400: 242, 90, 90;
+  --oa-static-red-600: 236, 19, 19;
+  --oa-static-green-400: 78, 209, 126;
+  --oa-static-green-500: 34, 197, 94;
+  --oa-static-amber-400: 247, 173, 49;
+  --oa-static-amber-500: 245, 158, 11;
+}
+
+/* ── Light Theme (default) ────────────────────────────── */
+:root,
+body:not([data-oa-dark-theme]) {
+  /* Alias Tokens */
+  --oa-alias-bg-base: #F8FAFC;
+  --oa-alias-bg-layer-1: #FFFFFF;
+  --oa-alias-bg-layer-2: #F1F5F9;
+  --oa-alias-bg-layer-3: #E2E8F0;
+  --oa-alias-sidebar-fill: #F8FAFC;
+  --oa-alias-glass-bg: rgba(255, 255, 255, 0.85);
+  --oa-alias-glass-border: rgba(15, 23, 42, 0.08);
+
+  --oa-alias-text-primary: #0F172A;
+  --oa-alias-text-secondary: #475569;
+  --oa-alias-text-tertiary: #64748B;
+  --oa-alias-text-caption: #94A3B8;
+  --oa-alias-text-dimmed: #CBD5E1;
+
+  --oa-alias-border-l1: rgba(15, 23, 42, 0.06);
+  --oa-alias-border-l2: rgba(15, 23, 42, 0.1);
+  --oa-alias-border-l3: rgba(15, 23, 42, 0.16);
+  --oa-alias-border-inverted: rgba(248, 250, 252, 0.9);
+
+  --oa-alias-brand-primary: #3B82F6;
+  --oa-alias-brand-gradient: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  --oa-alias-agent-glow: 0 0 20px rgba(59, 130, 246, 0.18);
+  --oa-alias-button-primary-fill: rgba(59, 130, 246, 0.12);
+  --oa-alias-button-primary-text: #2563EB;
+  --oa-alias-button-primary-border: rgba(59, 130, 246, 0.28);
+  --oa-alias-button-primary-hover: rgba(59, 130, 246, 0.20);
+  --oa-alias-button-primary-hover-border: rgba(59, 130, 246, 0.45);
+
+  --oa-alias-interactive-bg-hover: rgba(15, 23, 42, 0.05);
+  --oa-alias-interactive-bg-active: rgba(15, 23, 42, 0.09);
+  --oa-alias-interactive-solid-hover: #F1F5F9;
+
+  --oa-alias-error: #EF4444;
+  --oa-alias-success: #10B981;
+  --oa-alias-warning: #F59E0B;
+  --oa-alias-cyan: #06B6D4;
+
+  --oa-specific-menu: #FFFFFF;
+  --oa-alias-tooltip-bg: #0F172A;
+
+  /* Shadows */
+  --oa-shadow-lv1: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  --oa-shadow-lv2: 0 4px 14px 0 rgba(0, 0, 0, 0.05), 0 2px 6px 0 rgba(0, 0, 0, 0.03);
+  --oa-shadow-lv3: 0 12px 32px 0 rgba(0, 0, 0, 0.08), 0 4px 12px 0 rgba(0, 0, 0, 0.04);
+  --oa-shadow-floating: 0 20px 40px -15px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --oa-mask-blur: blur(12px);
+}
+
+/* ── Dark Theme ───────────────────────────────────────── */
+body[data-oa-dark-theme] {
+  --oa-alias-bg-base: #0B0F17;
+  --oa-alias-bg-layer-1: #131A26;
+  --oa-alias-bg-layer-2: #1C2433;
+  --oa-alias-bg-layer-3: #242E40;
+  --oa-alias-sidebar-fill: #0E131E;
+  --oa-alias-glass-bg: rgba(19, 26, 38, 0.85);
+  --oa-alias-glass-border: rgba(255, 255, 255, 0.08);
+
+  --oa-alias-text-primary: #F8FAFC;
+  --oa-alias-text-secondary: #94A3B8;
+  --oa-alias-text-tertiary: #64748B;
+  --oa-alias-text-caption: #475569;
+  --oa-alias-text-dimmed: #334155;
+
+  --oa-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --oa-alias-border-l2: rgba(255, 255, 255, 0.1);
+  --oa-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --oa-alias-border-inverted: rgba(11, 15, 23, 0.9);
+
+  --oa-alias-brand-primary: #60A5FA;
+  --oa-alias-brand-gradient: linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%);
+  --oa-alias-agent-glow: 0 0 24px rgba(96, 165, 250, 0.25);
+  --oa-alias-button-primary-fill: rgba(59, 130, 246, 0.18);
+  --oa-alias-button-primary-text: #60A5FA;
+  --oa-alias-button-primary-border: rgba(59, 130, 246, 0.35);
+  --oa-alias-button-primary-hover: rgba(59, 130, 246, 0.28);
+  --oa-alias-button-primary-hover-border: rgba(96, 165, 250, 0.55);
+
+  --oa-alias-interactive-bg-hover: rgba(255, 255, 255, 0.06);
+  --oa-alias-interactive-bg-active: rgba(255, 255, 255, 0.12);
+  --oa-alias-interactive-solid-hover: #1C2433;
+
+  --oa-alias-error: #F87171;
+  --oa-alias-success: #34D399;
+  --oa-alias-warning: #FBBF24;
+  --oa-alias-cyan: #38BDF8;
+
+  --oa-specific-menu: #131A26;
+  --oa-alias-tooltip-bg: #F8FAFC;
+
+  /* Shadows */
+  --oa-shadow-lv1: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+  --oa-shadow-lv2: 0 4px 16px 0 rgba(0, 0, 0, 0.5);
+  --oa-shadow-lv3: 0 12px 36px 0 rgba(0, 0, 0, 0.65);
+  --oa-shadow-floating: 0 20px 45px -15px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --oa-mask-blur: blur(12px);
+}
+
+/* ── Custom Skin: OpenAI Codex (Emerald & Slate) ─────────────────── */
+body[data-oa-skin="codex"] {
+  --oa-static-brand-500: 16, 185, 129;
+  --oa-static-brand-400: 52, 211, 153;
+  --oa-alias-brand-primary: #10B981;
+  --oa-alias-brand-gradient: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  --oa-alias-agent-glow: 0 0 24px rgba(16, 185, 129, 0.35);
+  --oa-alias-button-primary-fill: rgba(16, 185, 129, 0.16);
+  --oa-alias-button-primary-text: #34D399;
+  --oa-alias-button-primary-border: rgba(16, 185, 129, 0.38);
+  --oa-alias-button-primary-hover: rgba(16, 185, 129, 0.26);
+  --oa-alias-button-primary-hover-border: rgba(52, 211, 153, 0.60);
+}
+
+body[data-oa-dark-theme][data-oa-skin="codex"],
+body[data-oa-skin="codex"][data-oa-dark-theme] {
+  --oa-alias-bg-base: #080C10;
+  --oa-alias-bg-layer-1: #0E141D;
+  --oa-alias-bg-layer-2: #151E2B;
+  --oa-alias-bg-layer-3: #1E2A3C;
+  --oa-alias-sidebar-fill: #0A0F16;
+  --oa-alias-glass-bg: rgba(14, 20, 29, 0.88);
+  --oa-alias-glass-border: rgba(16, 185, 129, 0.15);
+}
+
+/* ── Custom Skin: Tokyo Night (Indigo & Cyan) ────────────────────── */
+body[data-oa-skin="tokyonight"] {
+  --oa-static-brand-500: 122, 162, 247;
+  --oa-static-brand-400: 125, 207, 255;
+  --oa-alias-brand-primary: #7AA2F7;
+  --oa-alias-brand-gradient: linear-gradient(135deg, #7AA2F7 0%, #BB9AF7 100%);
+  --oa-alias-agent-glow: 0 0 24px rgba(122, 162, 247, 0.28);
+  --oa-alias-button-primary-fill: rgba(122, 162, 247, 0.16);
+  --oa-alias-button-primary-text: #7DCFFF;
+  --oa-alias-button-primary-border: rgba(122, 162, 247, 0.38);
+  --oa-alias-button-primary-hover: rgba(122, 162, 247, 0.26);
+  --oa-alias-button-primary-hover-border: rgba(125, 207, 255, 0.60);
+}
+
+body[data-oa-dark-theme][data-oa-skin="tokyonight"] {
+  --oa-alias-bg-base: #16161E;
+  --oa-alias-bg-layer-1: #1A1B26;
+  --oa-alias-bg-layer-2: #24283B;
+  --oa-alias-bg-layer-3: #2F354F;
+  --oa-alias-sidebar-fill: #13141C;
+  --oa-alias-glass-bg: rgba(26, 27, 38, 0.88);
+  --oa-alias-glass-border: rgba(122, 162, 247, 0.12);
+}
+
+/* ── Custom Skin: Catppuccin Mocha (Pastel Mauve) ────────────────── */
+body[data-oa-skin="catppuccin"] {
+  --oa-static-brand-500: 203, 166, 247;
+  --oa-static-brand-400: 245, 194, 231;
+  --oa-alias-brand-primary: #CBA6F7;
+  --oa-alias-brand-gradient: linear-gradient(135deg, #CBA6F7 0%, #F5C2E7 100%);
+  --oa-alias-agent-glow: 0 0 24px rgba(203, 166, 247, 0.28);
+  --oa-alias-button-primary-fill: rgba(203, 166, 247, 0.16);
+  --oa-alias-button-primary-text: #F5C2E7;
+  --oa-alias-button-primary-border: rgba(203, 166, 247, 0.38);
+  --oa-alias-button-primary-hover: rgba(203, 166, 247, 0.26);
+  --oa-alias-button-primary-hover-border: rgba(245, 194, 231, 0.60);
+}
+
+body[data-oa-dark-theme][data-oa-skin="catppuccin"] {
+  --oa-alias-bg-base: #11111B;
+  --oa-alias-bg-layer-1: #181825;
+  --oa-alias-bg-layer-2: #1E1E2E;
+  --oa-alias-bg-layer-3: #313244;
+  --oa-alias-sidebar-fill: #11111B;
+  --oa-alias-glass-bg: rgba(24, 24, 37, 0.88);
+  --oa-alias-glass-border: rgba(203, 166, 247, 0.12);
+}
+
+/* ── Custom Skin: Dracula (Violet & Cyan) ────────────────────────── */
+body[data-oa-skin="dracula"] {
+  --oa-static-brand-500: 189, 147, 249;
+  --oa-static-brand-400: 255, 121, 198;
+  --oa-alias-brand-primary: #BD93F9;
+  --oa-alias-brand-gradient: linear-gradient(135deg, #BD93F9 0%, #FF79C6 100%);
+  --oa-alias-agent-glow: 0 0 24px rgba(189, 147, 249, 0.28);
+  --oa-alias-button-primary-fill: rgba(189, 147, 249, 0.16);
+  --oa-alias-button-primary-text: #FF79C6;
+  --oa-alias-button-primary-border: rgba(189, 147, 249, 0.38);
+  --oa-alias-button-primary-hover: rgba(189, 147, 249, 0.26);
+  --oa-alias-button-primary-hover-border: rgba(255, 121, 198, 0.60);
+}
+
+body[data-oa-dark-theme][data-oa-skin="dracula"] {
+  --oa-alias-bg-base: #1E1F29;
+  --oa-alias-bg-layer-1: #282A36;
+  --oa-alias-bg-layer-2: #383A59;
+  --oa-alias-bg-layer-3: #44475A;
+  --oa-alias-sidebar-fill: #191A21;
+  --oa-alias-glass-bg: rgba(40, 42, 54, 0.88);
+  --oa-alias-glass-border: rgba(189, 147, 249, 0.15);
+}
+
+/* ── Typography ───────────────────────────────────────── */
+:root {
+  --oa-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --oa-font-family-code: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
+    'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei';
+
+  /* Font Scale */
+  --oa-font-xxxs: 11px;
+  --oa-font-xxs: 12px;
+  --oa-font-xs: 13px;
+  --oa-font-s: 14px;
+  --oa-font-base: 16px;
+  --oa-font-m: 16px;
+  --oa-font-l: 20px;
+  --oa-font-xl: 24px;
+
+  /* Line Heights */
+  --oa-leading-xxxs: 14px;
+  --oa-leading-xxs: 18px;
+  --oa-leading-xs: 20px;
+  --oa-leading-s: 22px;
+  --oa-leading-base: 24px;
+  --oa-leading-m: 28px;
+  --oa-leading-l: 28px;
+  --oa-leading-xl: 32px;
+
+  /* Transitions */
+  --oa-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --oa-duration-fast: 0.1s;
+  --oa-duration-normal: 0.2s;
+  --oa-duration-slow: 0.3s;
+}
+
+/* ── Base Styles ──────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--oa-font-family);
+  font-size: var(--oa-font-s);
+  line-height: var(--oa-leading-s);
+  color: var(--oa-alias-text-primary);
+  background: var(--oa-alias-bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background var(--oa-duration-normal) var(--oa-ease-in-out);
+}
+
+/* ── Scrollbar ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--oa-alias-text-dimmed);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--oa-alias-text-tertiary);
+}
+
+/* ── Reduced Motion ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

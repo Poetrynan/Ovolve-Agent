@@ -1,0 +1,135 @@
+/* Menu — Dropdown menu, 12px radius, 4px padding */
+
+.container {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Menu panel */
+.menu {
+  position: absolute;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 4px;
+  background: var(--oa-specific-menu);
+  border: 1px solid var(--oa-alias-border-l2);
+  border-radius: 12px;
+  box-shadow: var(--oa-shadow-lv3);
+  z-index: 300;
+  animation: menuIn var(--oa-duration-fast) var(--oa-ease-in-out);
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Positioning */
+.bottom {
+  top: calc(100% + 4px);
+}
+
+.top {
+  bottom: calc(100% + 4px);
+}
+
+.left {
+  right: calc(100% + 4px);
+  top: 0;
+}
+
+.right {
+  left: calc(100% + 4px);
+  top: 0;
+}
+
+.start {
+  left: 0;
+}
+
+.center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.end {
+  right: 0;
+}
+
+/* Menu item */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--oa-alias-text-primary);
+  font-family: var(--oa-font-family);
+  font-size: var(--oa-font-xs);
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--oa-duration-fast) var(--oa-ease-in-out);
+}
+
+.item:hover:not(.disabled) {
+  background: var(--oa-alias-interactive-bg-hover);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--oa-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.itemIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--oa-alias-text-secondary);
+}
+
+.itemLabel {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcut {
+  font-size: var(--oa-font-xxs);
+  color: var(--oa-alias-text-caption);
+  font-family: var(--oa-font-family-code);
+  letter-spacing: 0.5px;
+}
+
+/* Danger */
+.danger {
+  color: var(--oa-alias-error);
+}
+
+.danger .itemIcon {
+  color: var(--oa-alias-error);
+}
+
+/* Disabled */
+.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Divider */
+.divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--oa-alias-border-l1);
+}
