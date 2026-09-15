@@ -25,11 +25,10 @@ def main() -> int:
         print("huggingface_hub is required: pip install huggingface_hub", file=sys.stderr)
         return 1
 
-    print(f"Downloading {HF_REPO} → {DEST}")
+    print(f"Downloading {HF_REPO} -> {DEST}")
     snapshot_download(
         repo_id=HF_REPO,
         local_dir=str(DEST),
-        local_dir_use_symlinks=False,
     )
     onnx = DEST / "onnx" / "model.onnx"
     if not onnx.is_file():
