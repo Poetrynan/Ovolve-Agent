@@ -177,6 +177,12 @@ function startPythonBackend(scriptPath: string): ChildProcess | null {
         // older backend build still authenticates.
         OVOLVE_API_TOKEN: API_TOKEN,
         OVOLVE_SERVER_PORT: String(backendPort),
+        // Packaged releases ship Xenova BGE ONNX under resources/embedder.
+        ...(fs.existsSync(path.join(process.resourcesPath, 'embedder'))
+          ? { OVOLVE_EMBED_CACHE: path.join(process.resourcesPath, 'embedder') }
+          : fs.existsSync(path.resolve(workingDir, 'resources', 'embedder'))
+            ? { OVOLVE_EMBED_CACHE: path.resolve(workingDir, 'resources', 'embedder') }
+            : {}),
         ...(browserManager ? {
           OVOLVE_BRIDGE_TOKEN: browserManager.token,
           OVOLVE_BRIDGE_PORT: String(browserManager.port),

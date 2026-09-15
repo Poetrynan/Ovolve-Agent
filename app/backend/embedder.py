@@ -65,9 +65,54 @@ MODEL_ENV = "OVOLVE_EMBED_MODEL"
 DISABLE_ENV = "OVOLVE_DISABLE_EMBEDDINGS"
 #: 强制后端：``onnx`` / ``torch``。默认自动探测（ONNX 优先）。
 BACKEND_ENV = "OVOLVE_EMBED_BACKEND"
+#: 本地 fastembed 缓存目录（打包进 resources/embedder 后离线加载）。
+CACHE_ENV = "OVOLVE_EMBED_CACHE"
 
 #: 单条文本进模型前的字符上限。超长对语义向量无额外贡献，且可能超模型 max_seq。
 MAX_CHARS = 2000
+
+#: HuggingFace 上的 ONNX 源仓库（打包用）。
+ONNX_HF_SOURCE = "Xenova/bge-base-zh-v1.5"
+
+
+def resolve_embed_cache_dir() -> Optional[str]:
+    """定位打包/开发环境下的 embedder 缓存目录。
+
+    优先级：
+      1. ``OVOLVE_EMBED_CACHE``
+      2. 仓库内 ``app/resources/embedder``（开发）
+      3. 与 ``embedder.py`` 相邻的 ``resources/embedder``（打包后常见布局）
+    """
+    env = (os.environ.get(CACHE_ENV) or "").strip()
+    if env and os.path.isdir(env):
+        return os.path.abspath(env)
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        # app/backend/embedder.py → app/resources/embedder
+        os.path.normpath(os.path.join(here, "..", "resources", "embedder")),
+        # resources/app/backend/embedder.py → resources/embedder
+        os.path.normpath(os.path.join(here, "..", "..", "embedder")),
+        os.path.normpath(os.path.join(here, "..", "..", "resources", "embedder")),
+    ]
+    ranked: list[str] = []
+    for path in candidates:
+        if not os.path.isdir(path):
+            continue
+        if _cache_has_onnx(path):
+            return path
+        ranked.append(path)
+    return ranked[0] if ranked else None
+
+
+def _cache_has_onnx(cache_dir: str) -> bool:
+    if os.path.isfile(os.path.join(cache_dir, "onnx", "model.onnx")):
+        return True
+    for root, _dirs, files in os.walk(cache_dir):
+        if "model.onnx" in files:
+            return True
+    return False
+
 
 
 def _l2_normalize(vec: list[float]) -> list[float]:
@@ -85,8 +130,9 @@ class LocalEmbedder:
         model_name: 覆盖默认模型。为 None 时读 ``OVOLVE_EMBED_MODEL``。
     """
 
-    def __init__(self, model_name: Optional[str] = None):
+    def __init__(self, model_name: Optional[str] = None, cache_dir: Optional[str] = None):
         self.model_name = (model_name or os.environ.get(MODEL_ENV) or DEFAULT_MODEL)
+        self.cache_dir = cache_dir or resolve_embed_cache_dir()
         self._model = None
         #: "onnx" | "torch" | None —— 实际加载成功的后端。
         self._backend: Optional[str] = None
@@ -109,6 +155,7 @@ class LocalEmbedder:
 
     def _cache_key(self, text: str) -> tuple:
         return (self.model_name, self._hash(text.encode("utf-8", "replace")).hexdigest())
+
 
     def _cache_get(self, text: str) -> Optional[list[float]]:
         key = self._cache_key(text)
@@ -155,7 +202,15 @@ class LocalEmbedder:
             supported = {m["model"] for m in TextEmbedding.list_supported_models()}
             if self.model_name not in supported:
                 self._register_custom_model(TextEmbedding)
-            self._model = TextEmbedding(model_name=self.model_name)
+
+            kwargs = {}
+            if self.cache_dir:
+                kwargs["cache_dir"] = self.cache_dir
+                # 打包资源已含权重时强制离线，避免 release 用户二次下载。
+                if _cache_has_onnx(self.cache_dir):
+                    kwargs["local_files_only"] = True
+
+            self._model = TextEmbedding(model_name=self.model_name, **kwargs)
             self._backend = "onnx"
             return True
         except Exception as e:
@@ -176,7 +231,7 @@ class LocalEmbedder:
                 model="BAAI/bge-base-zh-v1.5",
                 pooling=PoolingType.CLS,
                 normalization=True,
-                sources=ModelSource(hf="Xenova/bge-base-zh-v1.5"),
+                sources=ModelSource(hf=ONNX_HF_SOURCE),
                 dim=768,
                 model_file="onnx/model.onnx",
                 description="BGE-base-zh-v1.5 中文检索标杆模型（768 维）",

@@ -17,6 +17,11 @@ release/
 app/ui/release/
 *.exe
 
+# Bundled embedder weights (download via scripts/fetch_embedder_model.py)
+app/resources/embedder/**
+!app/resources/embedder/README.md
+!app/resources/embedder/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]
