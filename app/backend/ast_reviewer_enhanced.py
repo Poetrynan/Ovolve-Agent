@@ -94,8 +94,7 @@ class ASTReviewer:
         """Enhanced AST review (保持原有签名与行为兼容)。"""
         findings = self.review_perspectives(code, perspectives=[PERSPECTIVE_SECURITY])
         for f in findings:
-            if f.severity == "error":
-                return Result.failure(f.message)
+            return Result.failure(f.message)
         return Result.success("AST review passed")
 
     def review_perspectives(

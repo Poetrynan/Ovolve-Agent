@@ -801,7 +801,7 @@ class TeamBoard:
             raise ValueError(f"unknown review verdict {verdict!r}")
         t["review_status"] = verdict
         t["review_note"] = str(note or "")[:300]
-        if verdict in ("rejected", "changes_requested"):
+        if verdict == "rejected":
             t["status"] = "rejected"
         return True
 
