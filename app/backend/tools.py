@@ -781,6 +781,25 @@ def create_builtin_tools():
             risk_level="low",
             when_to_use="When checking what workflows have been recorded and are available for replay.",
         ),
+        ToolDef(
+            "evolution_undo",
+            "Undo the most recently accepted self-evolution rule or revert a specific proposal, restoring the target file from pre-change backup.",
+            {
+                "type": "object",
+                "properties": {
+                    "proposal_id": {
+                        "type": "string",
+                        "description": "Optional proposal ID to revert. If omitted, reverts the most recent proposal change.",
+                    },
+                },
+                "required": [],
+            },
+            _evolution_undo_impl,
+            domain="system",
+            risk_level="medium",
+            when_to_use="When an accepted evolution rule needs to be reverted or caused unexpected behavior.",
+            when_not_to_use="Do not use for rolling back normal workspace source code files.",
+        ),
     ]
 
 
@@ -855,6 +874,12 @@ def _workflow_list_impl(**kwargs) -> Result:
     from workflow_recorder import list_workflows
     wfs = list_workflows()
     return Result.success({"workflows": wfs, "count": len(wfs)})
+
+
+def _evolution_undo_impl(proposal_id: str = "", **kwargs) -> Result:
+    from evolution_undo import undo
+    ws = kwargs.get("workspace_root") or os.getcwd()
+    return undo(workspace_root=ws, proposal_id=proposal_id or None)
 
 
 _registry = None

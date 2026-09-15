@@ -3564,6 +3564,42 @@ async def handle_skill_patterns(request):
     return web.json_response({"patterns": [p.to_dict() for p in patterns]})
 
 
+def _resolve_request_workspace(request) -> str:
+    try:
+        router = request.app.get(ROUTER_KEY)
+        if router and getattr(router, "workspace", None):
+            return router.workspace
+    except Exception:
+        pass
+    return os.environ.get("OVOLVE_WORKSPACE") or os.getcwd()
+
+
+async def handle_evolution_undo(request):
+    """POST /api/evolution/undo — Revert an accepted proposal change from pre-modification backup."""
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    proposal_id = str(body.get("proposal_id") or "").strip()
+    from evolution_undo import undo
+    ws = _resolve_request_workspace(request)
+
+    res = undo(workspace_root=ws, proposal_id=proposal_id or None)
+    if not res.ok:
+        return web.json_response({"ok": False, "error": res.error}, status=400)
+    return web.json_response({"ok": True, "data": res.value})
+
+
+async def handle_evolution_undo_list(request):
+    """GET /api/evolution/undo — List available evolution snapshots for rollback."""
+    from evolution_undo import list_undo
+    ws = _resolve_request_workspace(request)
+
+    entries = list_undo(ws)
+    return web.json_response({"ok": True, "snapshots": entries})
+
+
 # ── Cron ──
 
 async def handle_crons(request):
@@ -8073,6 +8109,8 @@ async def create_server(router: Router, host: str = "127.0.0.1", port: int = 876
         web.get('/api/reflections', handle_reflections),
         web.get('/api/curriculum/gaps', handle_curriculum_gaps),
         web.get('/api/skills/patterns', handle_skill_patterns),
+        web.get('/api/evolution/undo', handle_evolution_undo_list),
+        web.post('/api/evolution/undo', handle_evolution_undo),
         # Cron
         web.get('/api/crons', handle_crons),
         web.post('/api/crons', handle_create_cron),

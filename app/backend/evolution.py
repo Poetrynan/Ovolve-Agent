@@ -1707,6 +1707,14 @@ class EvolutionStore:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def recent_signals(self, limit: int = 20) -> list[dict]:
+        """按时间倒序获取最近的信号列表。"""
+        rows = self._conn.execute(
+            "SELECT * FROM signals ORDER BY created_at DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # ── 提案 ────────────────────────────────────────────────────────────
 
     def open_proposals(self) -> list[Proposal]:
@@ -2308,6 +2316,17 @@ class EvolutionEngine:
         if edited and edited != p.draft.strip():
             self.store.update_draft(proposal_id, edited)
             p.draft = edited
+
+        # 接受路径 —— 写盘前原子快照备份，支持回滚
+        try:
+            from evolution_undo import create_evolution_snapshot
+            create_evolution_snapshot(
+                workspace_root=self.workspace_root,
+                target_file=p.target_file,
+                proposal_id=p.id,
+            )
+        except Exception as snap_exc:  # noqa: BLE001
+            print(f"[evolution] snapshot before apply failed (fail-open): {snap_exc}")
 
         # 接受路径 —— 写盘
         try:
