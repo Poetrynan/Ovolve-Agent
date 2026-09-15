@@ -14,7 +14,211 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
+
+
+# ── M-3: TaskSpec (Spec-Driven 派单合同) ───────────────────────────────────
+
+@dataclass
+class TaskSpec:
+    """Spec-Driven 结构化派单合同。
+
+    明确边界与验收断言，预取符号上下文，降低探索返工率与 Token 开销。
+    """
+    goal: str
+    in_scope: List[str] = field(default_factory=list)
+    out_of_scope: List[str] = field(default_factory=list)
+    acceptance: List[str] = field(default_factory=list)
+    context_refs: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "goal": self.goal,
+            "in_scope": list(self.in_scope),
+            "out_of_scope": list(self.out_of_scope),
+            "acceptance": list(self.acceptance),
+            "context_refs": list(self.context_refs),
+            "metadata": dict(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> TaskSpec:
+        d = dict(data or {})
+        return cls(
+            goal=str(d.get("goal") or ""),
+            in_scope=list(d.get("in_scope") or []),
+            out_of_scope=list(d.get("out_of_scope") or []),
+            acceptance=list(d.get("acceptance") or []),
+            context_refs=list(d.get("context_refs") or []),
+            metadata=dict(d.get("metadata") or {}),
+        )
+
+
+def build_task_spec(
+    goal: str,
+    in_scope: Optional[List[str]] = None,
+    out_of_scope: Optional[List[str]] = None,
+    acceptance: Optional[List[str]] = None,
+    context_refs: Optional[List[Dict[str, Any]]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """构造结构化派单合同字典。若 goal 为空抛出 ValueError。"""
+    if not goal or not isinstance(goal, str) or not goal.strip():
+        raise ValueError("goal must be a non-empty string")
+    spec = TaskSpec(
+        goal=goal.strip(),
+        in_scope=list(in_scope or []),
+        out_of_scope=list(out_of_scope or []),
+        acceptance=list(acceptance or []),
+        context_refs=list(context_refs or []),
+        metadata=dict(metadata or {}),
+    )
+    return spec.to_dict()
+
+
+def validate_task_spec(spec_data: Any) -> tuple[bool, List[str]]:
+    """校验派单合同有效性与完备度，检测 spec_ambiguity（缺少 acceptance 等）。"""
+    problems: List[str] = []
+    d = spec_data.to_dict() if hasattr(spec_data, "to_dict") else spec_data
+    if not isinstance(d, dict):
+        return False, [f"task spec must be dict or TaskSpec, got {type(spec_data).__name__}"]
+
+    goal = str(d.get("goal") or "").strip()
+    if not goal:
+        problems.append("missing goal in spec")
+
+    acceptance = d.get("acceptance")
+    if not isinstance(acceptance, (list, tuple)) or not acceptance:
+        problems.append("missing acceptance criteria in spec (spec_ambiguity)")
+
+    for field_name in ("in_scope", "out_of_scope", "context_refs"):
+        if field_name in d and not isinstance(d[field_name], (list, tuple)):
+            problems.append(f"field '{field_name}' must be a list")
+
+    return (len(problems) == 0), problems
+
+
+def prefetch_context_refs(
+    symbols: List[str],
+    root_dir: str = "",
+    graph: Any = None,
+) -> List[Dict[str, Any]]:
+    """使用 CKG / 代码符号索引预取关键符号定义与上下文，注入派单合同。"""
+    if not symbols:
+        return []
+
+    refs: List[Dict[str, Any]] = []
+    try:
+        if graph is None:
+            try:
+                from code_graph import get_code_graph
+                graph = get_code_graph(root_dir) if root_dir else None
+            except Exception:
+                pass
+
+        if graph is not None and hasattr(graph, "find_symbol"):
+            for sym in symbols:
+                res = graph.find_symbol(sym)
+                if res:
+                    refs.append({
+                        "symbol": sym,
+                        "path": str(res.get("file") or res.get("path") or ""),
+                        "line": int(res.get("line") or 0),
+                        "kind": str(res.get("kind") or "symbol"),
+                        "doc": str(res.get("doc") or "")[:200],
+                    })
+    except Exception:
+        pass
+
+    if not refs:
+        # 降级占位回退，保证派单合同格式统一
+        for sym in symbols:
+            refs.append({
+                "symbol": sym,
+                "path": "",
+                "line": 0,
+                "kind": "reference",
+            })
+    return refs
+
+
+# ── M-1 & M-2: Reviewer-Critic 结构化分歧裁决与四视角模板 ─────────────────
+
+REVIEW_PERSPECTIVE_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    "security": {
+        "name": "Security Audit",
+        "focus": "Vulnerabilities, injection risks, credential leakage, path traversal, untrusted input handling",
+        "tools": ["read_text", "search_code", "diff_files"],
+    },
+    "perf": {
+        "name": "Performance Analysis",
+        "focus": "Algorithmic complexity, quadratic loops, redundant I/O, regex recompilation, memory bloat",
+        "tools": ["read_text", "search_code", "diff_files"],
+    },
+    "maintainability": {
+        "name": "Maintainability Review",
+        "focus": "Modularity, naming clarity, cyclomatic complexity, code duplication, adherence to conventions",
+        "tools": ["read_text", "search_code", "diff_files"],
+    },
+    "test-coverage": {
+        "name": "Test & Reliability Verification",
+        "focus": "Missing unit tests, untested edge cases, assertion validity, regression prevention, swallowed exceptions",
+        "tools": ["read_text", "search_code", "diff_files"],
+    },
+}
+
+
+class ReviewVerdict:
+    """Reviewer-Critic 结构化分歧裁决状态三态。"""
+    CONFIRMED = "confirmed"    # 经 Critic 验证确凿成立的缺陷，回灌修复
+    REJECTED = "rejected"      # 确认为假阳性或误报，记录理由后丢弃
+    ESCALATED = "escalated"    # 高风险或上下文歧义边缘情况，升级给用户/开发者裁决
+
+
+def adjudicate_review_findings(
+    findings: List[Any],
+    critic_fn: Optional[Callable[[Any], tuple[str, str]]] = None,
+) -> Dict[str, List[Any]]:
+    """Reviewer-Critic 结构化分歧裁决器。
+
+    将评审意见经 Critic 验证后分类为 confirmed / rejected / escalated 三态。
+    """
+    groups: Dict[str, List[Any]] = {
+        ReviewVerdict.CONFIRMED: [],
+        ReviewVerdict.REJECTED: [],
+        ReviewVerdict.ESCALATED: [],
+    }
+
+    for f in findings:
+        if critic_fn is not None:
+            try:
+                verdict, reason = critic_fn(f)
+                if hasattr(f, "verdict"):
+                    f.verdict = verdict
+                    f.verdict_reason = reason
+                elif isinstance(f, dict):
+                    f["verdict"] = verdict
+                    f["verdict_reason"] = reason
+            except Exception as e:
+                verdict = ReviewVerdict.ESCALATED
+                if hasattr(f, "verdict"):
+                    f.verdict = verdict
+                    f.verdict_reason = f"Critic verification error: {e}"
+                elif isinstance(f, dict):
+                    f["verdict"] = verdict
+                    f["verdict_reason"] = f"Critic verification error: {e}"
+
+        v = getattr(f, "verdict", None) or (f.get("verdict") if isinstance(f, dict) else None)
+        v_clean = str(v or "").lower()
+        if v_clean in groups:
+            groups[v_clean].append(f)
+        else:
+            groups[ReviewVerdict.CONFIRMED].append(f)
+
+    return groups
+
 
 # ── RoleSpec 预设（§13 推荐角色）────────────────────────────────────────────
 # 工具名称必须与 ToolRegistry 注册的 canonical 真实名称严格一致：
@@ -500,18 +704,31 @@ class TeamBoard:
 
     def add_task(self, task_id: str, role: str, *,
                  depends_on: Optional[List[str]] = None,
-                 overrides: Dict[str, Any] | None = None) -> Dict[str, Any]:
+                 overrides: Dict[str, Any] | None = None,
+                 task_spec: Optional[TaskSpec | Dict[str, Any]] = None) -> Dict[str, Any]:
         spec = role_spec(role, overrides=overrides)
+        spec_contract = None
+        if task_spec:
+            spec_contract = task_spec.to_dict() if hasattr(task_spec, "to_dict") else dict(task_spec)
+
         entry = {
             "task_id": task_id, "role": role, "spec": spec,
             "status": "pending",          # pending|leased|delivered|rejected|failed|blocked
             "lease_owner": "", "result": None, "contract_problems": [],
-            "review_status": "none",      # none|approved|changes_requested|rejected
+            "review_status": "none",      # none|approved|changes_requested|rejected|confirmed|escalated
             "review_note": "",
             "depends_on": list(depends_on or []),
+            "spec_contract": spec_contract,
         }
         self._tasks[task_id] = entry
         return entry
+
+    def get_task_spec(self, task_id: str) -> Optional[TaskSpec]:
+        """获取指定任务绑定的 Spec-Driven 合同。"""
+        t = self._tasks.get(task_id)
+        if not t or not t.get("spec_contract"):
+            return None
+        return TaskSpec.from_dict(t["spec_contract"])
 
     def can_run(self, task_id: str) -> bool:
         """检查任务的前置依赖是否全部成功交付。"""
@@ -574,16 +791,17 @@ class TeamBoard:
         """reviewer gate（§13 ReviewStatus）：对 delivered 交付的复核裁决。
 
         rejected 即打回——父运行不得采信被复核否决的结果。非 delivered
-        状态无物可审，如实拒绝。
+        状态无物可审，如实拒绝。支持 confirmed / rejected / escalated 三态。
         """
         t = self._tasks.get(task_id)
         if not t or t["status"] != "delivered":
             return False
-        if verdict not in ("approved", "changes_requested", "rejected"):
+        valid_verdicts = ("approved", "changes_requested", "rejected", "confirmed", "escalated")
+        if verdict not in valid_verdicts:
             raise ValueError(f"unknown review verdict {verdict!r}")
         t["review_status"] = verdict
         t["review_note"] = str(note or "")[:300]
-        if verdict == "rejected":
+        if verdict in ("rejected", "changes_requested"):
             t["status"] = "rejected"
         return True
 
@@ -628,11 +846,19 @@ class DispatchPipeline:
         spec = role_spec(role)
         return {"role": role, "persona": requested_persona or role, "spec": spec}
 
-    def dispatch(self, task_id: str, role_info: dict, parent_session_id: str, *, fork: bool = False) -> dict:
-        """Stage 3: Dispatch 会话隔离与调度准备（支持 fork 历史快照继承）。"""
+    def dispatch(
+        self,
+        task_id: str,
+        role_info: dict,
+        parent_session_id: str,
+        *,
+        fork: bool = False,
+        task_spec: Optional[TaskSpec | Dict[str, Any]] = None,
+    ) -> dict:
+        """Stage 3: Dispatch 会话隔离、派单合同与调度准备（支持 fork 历史快照继承）。"""
         import uuid
         child_session_id = f"subagent-{uuid.uuid4().hex[:8]}"
-        return {
+        res = {
             "task_id": task_id,
             "child_session_id": child_session_id,
             "parent_session_id": parent_session_id,
@@ -641,6 +867,17 @@ class DispatchPipeline:
             "dispatched_at": time.time(),
             "forked": fork,
         }
+        if task_spec:
+            res["spec"] = task_spec.to_dict() if hasattr(task_spec, "to_dict") else dict(task_spec)
+        return res
+
+    def review(
+        self,
+        findings: List[Any],
+        critic_fn: Optional[Callable[[Any], tuple[str, str]]] = None,
+    ) -> Dict[str, List[Any]]:
+        """Stage 4+ Review: Reviewer-Critic 结构化分歧裁决。"""
+        return adjudicate_review_findings(findings, critic_fn)
 
     def deliver(self, result_payload: Any, expected_schema: dict) -> tuple[bool, list[str]]:
         """Stage 4: Delivery 交付物契约校验。"""
