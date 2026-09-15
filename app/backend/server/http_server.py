@@ -8079,7 +8079,21 @@ async def create_server(router: Router, host: str = "127.0.0.1", port: int = 876
     app[ROUTER_KEY] = router           # legacy: HTTP handlers use this for storage / workspace
     app[SESSION_HOST_KEY] = session_host
 
+    # Background idle evolution miner (fail-open)
+    try:
+        from evolution_miner import get_evolution_miner
+        _miner = get_evolution_miner(session_host=session_host, workspace_root=router.workspace)
+        _miner.start()
+        print(f"[evolution_miner] started (interval={_miner.interval_s}s)")
+    except Exception as _miner_e:  # noqa: BLE001
+        print(f"[evolution_miner] start skipped: {_miner_e}")
+
     async def _on_cleanup_app(app_instance):
+        try:
+            from evolution_miner import get_evolution_miner
+            get_evolution_miner().stop()
+        except Exception:
+            pass
         try:
             from llm_client import close_shared_sessions
             await close_shared_sessions()
