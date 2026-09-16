@@ -41,7 +41,7 @@ export default function EvolutionPage() {
   const {
     mode, policy, pending, history, counts, loading, loaded, refreshing, mining,
     errors, busyIds, lastDecision,
-    fetchPending, fetchMode, fetchHistory, setMode, decide, mine, clearError, dismissDecision,
+    fetchPending, fetchMode, fetchHistory, setMode, decide, mine, undoProposal, clearError, dismissDecision,
   } = useEvolutionStore()
 
   const {
@@ -53,6 +53,7 @@ export default function EvolutionPage() {
 
   const [notice, setNotice] = useState<Notice | null>(null)
   const [busyCandidate, setBusyCandidate] = useState('')
+  const [undoingId, setUndoingId] = useState<string | null>(null)
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const flash = (n: Notice) => {
@@ -123,6 +124,22 @@ export default function EvolutionPage() {
     } finally {
       setBusyCandidate('')
       await fetchApprovals()
+    }
+  }
+
+  const handleUndo = async (id: string) => {
+    if (undoingId) return
+    if (!window.confirm('确定要撤销该规则并回滚对应的配置修改吗？')) return
+    setUndoingId(id)
+    try {
+      const res = await undoProposal(id)
+      if (res.ok) {
+        flash({ tone: 'ok', text: '已成功撤销并回滚该规则变更' })
+      } else {
+        flash({ tone: 'warn', text: `撤销失败: ${res.error || '未知错误'}` })
+      }
+    } finally {
+      setUndoingId(null)
     }
   }
 
@@ -467,9 +484,22 @@ export default function EvolutionPage() {
                           </Badge>
                         )}
                       </div>
-                      <span className="text-[10px] text-muted-foreground/60 font-mono">
-                        采纳于 {relativeTime(p.decidedAt || p.createdAt)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground/60 font-mono">
+                          采纳于 {relativeTime(p.decidedAt || p.createdAt)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[11px] text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1 rounded transition-colors"
+                          onClick={() => handleUndo(p.id)}
+                          disabled={undoingId === p.id}
+                          title="撤销并回滚此规则"
+                        >
+                          <RotateCcw className={cn('w-3 h-3', undoingId === p.id && 'animate-spin')} />
+                          <span>{undoingId === p.id ? '撤销中…' : '撤销'}</span>
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="space-y-1">

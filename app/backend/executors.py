@@ -139,39 +139,42 @@ DANGEROUS_CALLS = {
 DANGEROUS_ATTRS = {"system", "popen", "exec", "execv", "fork", "kill"}
 
 
-class ASTReviewer:
-    """Pre-execution AST review: intercept dangerous paths/calls."""
+try:
+    from ast_reviewer_enhanced import ASTReviewer, get_ast_reviewer
+except ImportError:
+    class ASTReviewer:
+        """Pre-execution AST review: intercept dangerous paths/calls (fallback)."""
 
-    def review(self, code: str) -> Result:
-        try:
-            tree = ast.parse(code)
-        except SyntaxError as e:
-            return Result.failure(f"Syntax error: {e}")
+        def review(self, code: str) -> Result:
+            try:
+                tree = ast.parse(code)
+            except SyntaxError as e:
+                return Result.failure(f"Syntax error: {e}")
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                name = self._get_call_name(node)
-                if name in DANGEROUS_CALLS:
-                    return Result.failure(f"Blocked dangerous call: {name}")
-            if isinstance(node, ast.Attribute):
-                if node.attr in DANGEROUS_ATTRS:
-                    return Result.failure(f"Blocked dangerous attribute: {node.attr}")
-            # Check for path traversal patterns
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if ".." in node.value and ("/" in node.value or "\\" in node.value):
-                    return Result.failure(f"Blocked path traversal: {node.value}")
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    name = self._get_call_name(node)
+                    if name in DANGEROUS_CALLS:
+                        return Result.failure(f"Blocked dangerous call: {name}")
+                if isinstance(node, ast.Attribute):
+                    if node.attr in DANGEROUS_ATTRS:
+                        return Result.failure(f"Blocked dangerous attribute: {node.attr}")
+                # Check for path traversal patterns
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if ".." in node.value and ("/" in node.value or "\\" in node.value):
+                        return Result.failure(f"Blocked path traversal: {node.value}")
 
-        return Result.success("AST review passed")
+            return Result.success("AST review passed")
 
-    def _get_call_name(self, node: ast.Call) -> str:
-        func = node.func
-        if isinstance(func, ast.Name):
-            return func.id
-        if isinstance(func, ast.Attribute):
-            if isinstance(func.value, ast.Name):
-                return f"{func.value.id}.{func.attr}"
-            return func.attr
-        return ""
+        def _get_call_name(self, node: ast.Call) -> str:
+            func = node.func
+            if isinstance(func, ast.Name):
+                return func.id
+            if isinstance(func, ast.Attribute):
+                if isinstance(func.value, ast.Name):
+                    return f"{func.value.id}.{func.attr}"
+                return func.attr
+            return ""
 
 
 def pyodide_run(code: str, timeout: int = 30) -> Result:

@@ -100,6 +100,69 @@ def validate_task_spec(spec_data: Any) -> tuple[bool, List[str]]:
     return (len(problems) == 0), problems
 
 
+def format_task_spec_contract(spec_data: Any) -> str:
+    """Format a TaskSpec or dict into a structured markdown contract block for injection into subagent prompts."""
+    if not spec_data:
+        return ""
+    if hasattr(spec_data, "to_dict"):
+        d = spec_data.to_dict()
+    elif isinstance(spec_data, dict):
+        d = spec_data
+    else:
+        return ""
+
+    lines = ["### 📋 派单合同 (Task Contract)"]
+    goal = str(d.get("goal") or "").strip()
+    if goal:
+        lines.append(f"- **Goal / 目标**: {goal}")
+
+    in_scope = d.get("in_scope")
+    if in_scope and isinstance(in_scope, (list, tuple)):
+        clean_in = [str(x) for x in in_scope if str(x).strip()]
+        if clean_in:
+            lines.append(f"- **In Scope / 范围约束**: {', '.join(clean_in)}")
+
+    out_of_scope = d.get("out_of_scope")
+    if out_of_scope and isinstance(out_of_scope, (list, tuple)):
+        clean_out = [str(x) for x in out_of_scope if str(x).strip()]
+        if clean_out:
+            lines.append(f"- **Out of Scope / 严禁越界**: {', '.join(clean_out)}")
+
+    acceptance = d.get("acceptance")
+    if acceptance and isinstance(acceptance, (list, tuple)):
+        clean_acc = [str(x) for x in acceptance if str(x).strip()]
+        if clean_acc:
+            lines.append("- **Acceptance Criteria / 验收断言**:")
+            for item in clean_acc:
+                lines.append(f"  - [ ] {item}")
+
+    context_refs = d.get("context_refs")
+    if context_refs and isinstance(context_refs, (list, tuple)):
+        clean_refs = [r for r in context_refs if r]
+        if clean_refs:
+            lines.append("- **Context References / 关键符号与上下文**:")
+            for ref in clean_refs:
+                if isinstance(ref, dict):
+                    sym = ref.get("symbol", "")
+                    path = ref.get("path", "")
+                    line = ref.get("line", 0)
+                    kind = ref.get("kind", "")
+                    doc = ref.get("doc", "")
+                    loc = f"{path}:{line}" if path and line else (path or "")
+                    parts = [f"`{sym}`"] if sym else []
+                    if loc:
+                        parts.append(f"({loc})")
+                    if kind and kind not in ("symbol", "reference"):
+                        parts.append(f"[{kind}]")
+                    if doc:
+                        parts.append(f"- {doc}")
+                    lines.append(f"  - {' '.join(parts) if parts else str(ref)}")
+                else:
+                    lines.append(f"  - {ref}")
+
+    return "\n".join(lines)
+
+
 def prefetch_context_refs(
     symbols: List[str],
     root_dir: str = "",

@@ -1151,19 +1151,29 @@ class SubagentRuntime:
         ``defer_merge=True`` hands each overlay back unmerged for exactly that
         reason.
         """
-        running = [
-            asyncio.create_task(self.spawn_one(
-                str(spec.get("subagent_type") or ""),
-                str(spec.get("prompt") or ""),
-                parent_ctx,
-                str(spec.get("label") or ""),
-                defer_merge=True,
-                model_override=spec.get("model") or model_override,
-                role=str(spec.get("role") or ""),
-                result_schema=spec.get("result_schema"),
-            ))
-            for spec in tasks
-        ]
+        running = []
+        for spec in tasks:
+            task_prompt = str(spec.get("prompt") or "")
+            if spec.get("task_spec"):
+                try:
+                    from team import format_task_spec_contract
+                    contract_text = format_task_spec_contract(spec["task_spec"])
+                    if contract_text and contract_text not in task_prompt:
+                        task_prompt = f"{contract_text}\n\n{task_prompt}"
+                except Exception:
+                    pass
+            running.append(
+                asyncio.create_task(self.spawn_one(
+                    str(spec.get("subagent_type") or ""),
+                    task_prompt,
+                    parent_ctx,
+                    str(spec.get("label") or ""),
+                    defer_merge=True,
+                    model_override=spec.get("model") or model_override,
+                    role=str(spec.get("role") or ""),
+                    result_schema=spec.get("result_schema"),
+                ))
+            )
 
         # return_exceptions so one blown sub-agent can't cancel its siblings.
         raw = await asyncio.gather(*running, return_exceptions=True)
@@ -1702,6 +1712,37 @@ TASK_TOOL_SCHEMA = {
                             {"type": "object"},
                         ],
                     },
+                    "task_spec": {
+                        "type": "object",
+                        "description": (
+                            "Optional structured task specification contract. "
+                            "Defines goal, in_scope, out_of_scope, acceptance criteria, "
+                            "and context_refs to bound the subagent and prevent rework."
+                        ),
+                        "properties": {
+                            "goal": {"type": "string", "description": "Goal for this sub-task."},
+                            "in_scope": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Files, paths or areas strictly in scope.",
+                            },
+                            "out_of_scope": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Areas strictly out of scope.",
+                            },
+                            "acceptance": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Acceptance criteria / test assertions that must be met.",
+                            },
+                            "context_refs": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "Key symbol definitions and location references.",
+                            },
+                        },
+                    },
                 },
                 "required": ["subagent_type", "prompt"],
             },
@@ -1869,8 +1910,18 @@ async def _run_dag(runtime: "SubagentRuntime", tasks: list[dict], ctx: dict,
                     continue
                 spec = dict(t)
                 prefix = _dep_prefix(t, by_id)
+                task_prompt = str(t.get("prompt") or "")
+                if t.get("task_spec"):
+                    try:
+                        from team import format_task_spec_contract
+                        contract_text = format_task_spec_contract(t["task_spec"])
+                        if contract_text and contract_text not in task_prompt:
+                            task_prompt = f"{contract_text}\n\n{task_prompt}"
+                    except Exception:
+                        pass
                 if prefix:
-                    spec["prompt"] = prefix + str(t.get("prompt") or "")
+                    task_prompt = prefix + task_prompt
+                spec["prompt"] = task_prompt
                 specs.append(spec)
                 spec_idx.append(i)
 

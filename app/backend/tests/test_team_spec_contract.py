@@ -93,26 +93,64 @@ def test_dispatch_pipeline_with_spec_contract():
     assert dispatched["spec"]["context_refs"][0]["symbol"] == "login_handler"
 
 
-def test_teamboard_stores_and_queries_spec(tmp_path):
-    storage = Storage(db_dir=str(tmp_path / "db"))
-    board = TeamBoard(storage, "parent-run-spec")
+def test_teamboard_stores_and_queries_spec():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+        storage = Storage(db_dir=str(Path(tmp_dir) / "db"))
+        try:
+            board = TeamBoard(storage, "parent-run-spec")
 
-    spec = TaskSpec(
-        goal="Optimize SQL queries",
-        in_scope=["query.py"],
-        acceptance=["Latency must be less than 50ms"],
-    )
+            spec = TaskSpec(
+                goal="Optimize SQL queries",
+                in_scope=["query.py"],
+                acceptance=["Latency must be less than 50ms"],
+            )
 
-    entry = board.add_task("task-opt-sql", "coder", task_spec=spec)
-    assert "spec_contract" in entry
-    assert entry["spec_contract"]["goal"] == "Optimize SQL queries"
+            entry = board.add_task("task-opt-sql", "coder", task_spec=spec)
+            assert "spec_contract" in entry
+            assert entry["spec_contract"]["goal"] == "Optimize SQL queries"
 
-    retrieved = board.get_task_spec("task-opt-sql")
-    assert retrieved is not None
-    assert retrieved.goal == "Optimize SQL queries"
-    assert retrieved.in_scope == ["query.py"]
+            retrieved = board.get_task_spec("task-opt-sql")
+            assert retrieved is not None
+            assert retrieved.goal == "Optimize SQL queries"
+            assert retrieved.in_scope == ["query.py"]
+        finally:
+            try:
+                storage.close()
+            except Exception:
+                pass
 
 
 def test_prefetch_context_refs_fallback():
     refs = prefetch_context_refs(["non_existent_symbol_xyz"], root_dir="/dummy")
     assert isinstance(refs, list)
+
+
+def test_format_task_spec_contract():
+    from team import format_task_spec_contract
+    spec = TaskSpec(
+        goal="Audit JWT token expiration and claim parsing",
+        in_scope=["app/backend/auth.py"],
+        out_of_scope=["app/frontend/*"],
+        acceptance=["Token expires after 1h", "No unverified claim decode"],
+        context_refs=[{"symbol": "verify_jwt", "path": "auth.py", "line": 42, "kind": "function"}],
+    )
+    contract = format_task_spec_contract(spec)
+    assert "### 📋 派单合同 (Task Contract)" in contract
+    assert "- **Goal / 目标**: Audit JWT token expiration and claim parsing" in contract
+    assert "- **In Scope / 范围约束**: app/backend/auth.py" in contract
+    assert "- **Out of Scope / 严禁越界**: app/frontend/*" in contract
+    assert "  - [ ] Token expires after 1h" in contract
+    assert "`verify_jwt`" in contract
+    assert "(auth.py:42)" in contract
+
+
+def test_task_tool_schema_declares_task_spec():
+    from subagent_runtime import TASK_TOOL_SCHEMA
+    items_props = TASK_TOOL_SCHEMA["properties"]["tasks"]["items"]["properties"]
+    assert "task_spec" in items_props
+    assert "goal" in items_props["task_spec"]["properties"]
+    assert "in_scope" in items_props["task_spec"]["properties"]
+    assert "acceptance" in items_props["task_spec"]["properties"]
+

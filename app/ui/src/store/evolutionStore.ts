@@ -164,6 +164,7 @@ interface EvolutionState {
   /** `draft` overrides the machine-composed text when the user edited it. */
   decide: (id: string, accept: boolean, draft?: string) => Promise<void>
   mine: () => Promise<number>
+  undoProposal: (id: string) => Promise<{ ok: boolean; error?: string }>
   /** Called from the WS bridge when the backend mined something new. */
   onProposalEvent: (openCount: number) => void
   clearError: (source?: ErrorSource) => void
@@ -404,6 +405,24 @@ export const useEvolutionStore = create<EvolutionState>((set, get) => ({
       return 0
     } finally {
       set({ mining: false })
+    }
+  },
+
+  undoProposal: async (id: string) => {
+    try {
+      const res = await sendJson<{ ok: boolean; error?: string; data?: any }>(
+        `${API_BASE}/api/evolution/undo`,
+        'POST',
+        { proposal_id: id },
+      )
+      if (res && res.ok) {
+        await get().fetchHistory(get().historyLimit)
+        await get().fetchPending()
+        return { ok: true }
+      }
+      return { ok: false, error: res?.error || '撤销失败' }
+    } catch (e: any) {
+      return { ok: false, error: msg(e) }
     }
   },
 

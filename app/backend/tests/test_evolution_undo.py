@@ -15,7 +15,10 @@ from result import Result
 
 
 @pytest.fixture
-def clean_env(tmp_path):
+def clean_env():
+    import tempfile
+    td = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+    tmp_path = Path(td.name)
     ws = tmp_path / "workspace"
     ws.mkdir()
     agents_md = ws / "AGENTS.md"
@@ -25,13 +28,19 @@ def clean_env(tmp_path):
     db_path = str(tmp_path / "evolution.db")
     store = EvolutionStore(db_path=db_path)
     engine = EvolutionEngine(store=store, mode=MODE_ACTIVE, workspace_root=str(ws))
-    return {
-        "ws": ws,
-        "agents_md": agents_md,
-        "original_content": original_content,
-        "store": store,
-        "engine": engine,
-    }
+    try:
+        yield {
+            "ws": ws,
+            "agents_md": agents_md,
+            "original_content": original_content,
+            "store": store,
+            "engine": engine,
+        }
+    finally:
+        try:
+            td.cleanup()
+        except Exception:
+            pass
 
 
 def test_backup_created_on_decide_accept(clean_env):
