@@ -122,3 +122,51 @@ def test_get_skill_detail():
         assert val["name"] == "test-detail-skill"
         assert val["description"] == "Detailed test skill"
         assert "Detailed instructions" in val["body"]
+
+
+def test_catalog_skill_paths_point_into_plugins_tree():
+    """Marketplace skill entries must name a real upstream directory.
+
+    wshobson/agents has no top-level skills/ directory: every skill lives at
+    plugins/<plugin>/skills/<skill>/. An entry written as "skills/<name>" resolves
+    to nothing, and the failure only surfaces deep inside the clone step as a
+    missing SKILL.md, which reads like a network problem rather than a bad path.
+    """
+    skills = [e for e in MARKETPLACE_CATALOG if e.get("type") == "skill"]
+    assert skills, "catalog should carry at least one skill entry"
+    for entry in skills:
+        path = entry.get("skillPath") or ""
+        assert path, f"{entry['id']} has no skillPath"
+        # 必须是目录：install_marketplace_skill 只判 isdir，写成文件路径会直接失败。
+        assert not path.endswith("SKILL.md"), f"{entry['id']} skillPath must be a directory"
+        assert path.startswith("plugins/"), f"{entry['id']} uses a non-plugin path: {path}"
+        assert "/skills/" in path, f"{entry['id']} skillPath lacks a skills/ segment: {path}"
+        parts = path.split("/")
+        assert len(parts) == 4, (
+            f"{entry['id']} expected plugins/<plugin>/skills/<skill>, got {path}"
+        )
+
+
+def test_catalog_skill_paths_stay_within_approved_plugins():
+    """Skill entries must come from plugin trees we have reviewed.
+
+    Naming the approved set is safer than naming the ones we exclude: an
+    allowlist fails closed when upstream adds a plugin we have never looked
+    at, instead of quietly admitting it until someone remembers to extend a
+    blocklist.
+    """
+    approved = {
+        "developer-essentials",
+        "llm-application-dev",
+        "ui-design",
+        "documentation-generation",
+        "protect-mcp",
+    }
+    for entry in MARKETPLACE_CATALOG:
+        path = str(entry.get("skillPath") or "")
+        if not path.startswith("plugins/"):
+            continue
+        plugin = path.split("/")[1]
+        assert plugin in approved, (
+            f"{entry['id']} pulls from an unreviewed plugin: {plugin}"
+        )

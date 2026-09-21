@@ -75,7 +75,12 @@ def install_from_lock_entry(name: str, entry: dict, loader) -> Result:
     """Install one skill described in skills-lock.json."""
     source = str(entry.get("source") or "")
     source_type = str(entry.get("sourceType") or "github")
-    skill_path = str(entry.get("skillPath") or f"skills/{name}")
+    # 没有 skillPath 就报错，不猜。上游仓库没有顶层 skills/ 目录，"skills/<name>"
+    # 这种默认值从来没对过——它只会让安装走到深处才以 "SKILL.md not found" 失败，
+    # 看上去像网络问题，实际是路径编错了。
+    skill_path = str(entry.get("skillPath") or "")
+    if not skill_path:
+        return Result.failure(f"skillPath is required for '{name}': the upstream layout must be stated explicitly")
     if source_type != "github":
         return Result.failure(f"unsupported sourceType: {source_type}")
     with tempfile.TemporaryDirectory(prefix="ovolve-skill-") as tmp:
@@ -240,95 +245,99 @@ def with_provenance(entry: dict) -> dict:
 
 
 MARKETPLACE_CATALOG: list[dict] = [
+    # skillPath 必须写成"目录"，不能带 /SKILL.md：install_marketplace_skill
+    # 那段只判 isdir，没有 isfile 兜底，写成文件路径会让市场安装直接失败。
+    # 上游 wshobson/agents 的真实结构是 plugins/<plugin>/skills/<skill>/，
+    # 没有顶层 skills/ 目录——早先那批 "skills/<name>" 条目全都指向不存在的路径。
     {
-        "id": "academic-search",
-        "name": "academic-search",
-        "title": "学术文献与论文检索",
-        "description": "搜索并分析 arXiv 预印本、学术会议论文、引用网络及前沿算法比对。",
-        "category": "analysis",
-        "author": "wshobson",
-        "source": "github.com/wshobson/agents",
-        "skillPath": "skills/academic-search",
-        "type": "skill",
-        "tags": ["paper", "arxiv", "research", "academic"],
-        "trustLevel": "verified",
-    },
-    {
-        "id": "agent-glass-ui",
-        "name": "agent-glass-ui",
-        "title": "流光毛玻璃 Agent 界面套件",
-        "description": "毛玻璃与流光动效风格的 AI Agent 前端设计系统。",
-        "category": "architecture",
-        "author": "wshobson",
-        "source": "github.com/wshobson/agents",
-        "skillPath": "skills/agent-glass-ui",
-        "type": "skill",
-        "tags": ["ui", "design", "glassmorphism", "frontend"],
-        "trustLevel": "verified",
-    },
-    {
-        "id": "code-review",
-        "name": "code-review",
-        "title": "结构化工程代码审查",
-        "description": "多维度代码审查：审查变更意图、结构总览与严重度分级反馈，生成物理证据。",
+        "id": "code-review-excellence",
+        "name": "code-review-excellence",
+        "title": "结构化代码审查",
+        "description": "代码审查的维度拆分、严重度分级与反馈组织方式。",
         "category": "development",
         "author": "wshobson",
         "source": "github.com/wshobson/agents",
-        "skillPath": "skills/code-review",
+        "skillPath": "plugins/developer-essentials/skills/code-review-excellence",
         "type": "skill",
         "tags": ["review", "pr", "quality", "git"],
         "trustLevel": "verified",
     },
     {
-        "id": "deep-research",
-        "name": "deep-research",
-        "title": "多跳深度网络调研",
-        "description": "跨信息源交叉证据链验证、深度网络检索与多层综合分析报告产出。",
+        "id": "hybrid-search-implementation",
+        "name": "hybrid-search-implementation",
+        "title": "混合检索实现",
+        "description": "关键词检索与向量检索结合的混合检索方案与结果融合。",
         "category": "analysis",
         "author": "wshobson",
         "source": "github.com/wshobson/agents",
-        "skillPath": "skills/deep-research",
+        "skillPath": "plugins/llm-application-dev/skills/hybrid-search-implementation",
         "type": "skill",
-        "tags": ["research", "search", "fact-check"],
+        "tags": ["search", "retrieval", "vector", "keyword"],
         "trustLevel": "verified",
     },
     {
-        "id": "baoyu-diagram",
-        "name": "baoyu-diagram",
-        "title": "出版级专业图表与架构图",
-        "description": "生成高美感、自适应暗色/亮色的专业 SVG 与 Mermaid 架构图、时序图与状态机。",
-        "category": "content",
+        "id": "rag-implementation",
+        "name": "rag-implementation",
+        "title": "检索增强生成实现",
+        "description": "检索增强生成管线的搭建：切分、召回、拼接与生成衔接。",
+        "category": "analysis",
         "author": "wshobson",
         "source": "github.com/wshobson/agents",
-        "skillPath": "skills/baoyu-diagram",
+        "skillPath": "plugins/llm-application-dev/skills/rag-implementation",
         "type": "skill",
-        "tags": ["diagram", "mermaid", "architecture", "svg"],
+        "tags": ["rag", "retrieval", "llm", "pipeline"],
         "trustLevel": "verified",
     },
     {
-        "id": "claude-doctor",
-        "name": "claude-doctor",
-        "title": "Agent 运行环境健康诊断",
-        "description": "全量 Agent 运行时诊断：凭据健康度、Git 状态、MCP 服务与环境链路排障。",
-        "category": "system",
-        "author": "wshobson",
-        "source": "github.com/wshobson/agents",
-        "skillPath": "skills/claude-doctor",
-        "type": "skill",
-        "tags": ["doctor", "diagnostics", "mcp", "environment"],
-        "trustLevel": "verified",
-    },
-    {
-        "id": "design-taste-frontend",
-        "name": "design-taste-frontend",
-        "title": "反模板化高审美前端设计",
-        "description": "推导项目独有设计语言，避免 AI 模板廉价感，物理级对齐工业界最高美学标准。",
+        "id": "design-system-patterns",
+        "name": "design-system-patterns",
+        "title": "设计系统构建模式",
+        "description": "设计系统的组织方式：设计令牌、组件分层与跨端一致性约束。",
         "category": "architecture",
         "author": "wshobson",
         "source": "github.com/wshobson/agents",
-        "skillPath": "skills/design-taste-frontend",
+        "skillPath": "plugins/ui-design/skills/design-system-patterns",
         "type": "skill",
-        "tags": ["design", "frontend", "aesthetic", "anti-slop"],
+        "tags": ["ui", "design", "design-system", "frontend"],
+        "trustLevel": "verified",
+    },
+    {
+        "id": "visual-design-foundations",
+        "name": "visual-design-foundations",
+        "title": "视觉设计基础",
+        "description": "版面、层级、色彩与间距的视觉基础原则。",
+        "category": "architecture",
+        "author": "wshobson",
+        "source": "github.com/wshobson/agents",
+        "skillPath": "plugins/ui-design/skills/visual-design-foundations",
+        "type": "skill",
+        "tags": ["design", "frontend", "visual", "layout"],
+        "trustLevel": "verified",
+    },
+    {
+        "id": "architecture-decision-records",
+        "name": "architecture-decision-records",
+        "title": "架构决策记录",
+        "description": "以 ADR 形式记录架构决策：背景、备选方案、取舍与后续影响。",
+        "category": "content",
+        "author": "wshobson",
+        "source": "github.com/wshobson/agents",
+        "skillPath": "plugins/documentation-generation/skills/architecture-decision-records",
+        "type": "skill",
+        "tags": ["architecture", "adr", "documentation", "decision"],
+        "trustLevel": "verified",
+    },
+    {
+        "id": "protect-mcp-setup",
+        "name": "protect-mcp-setup",
+        "title": "MCP 服务防护配置",
+        "description": "MCP 服务的接入与防护配置，约束工具暴露面与调用边界。",
+        "category": "system",
+        "author": "wshobson",
+        "source": "github.com/wshobson/agents",
+        "skillPath": "plugins/protect-mcp/skills/protect-mcp-setup",
+        "type": "skill",
+        "tags": ["mcp", "security", "setup", "environment"],
         "trustLevel": "verified",
     },
     # ─── Curated MCP Connectors ───────────────────────────────────────
@@ -665,7 +674,10 @@ def install_marketplace_skill(
             cloned = _clone_github(entry["source"].replace("github.com/", ""), os.path.join(stage_tmp, "repo"))
             if not cloned.ok:
                 return cloned
-            skill_path = entry.get("skillPath", f"skills/{skill_id}")
+            # 同上：缺 skillPath 就报清楚，不套一个从来没对过的默认值。
+            skill_path = str(entry.get("skillPath") or "")
+            if not skill_path:
+                return Result.failure(f"catalog entry '{skill_id}' has no skillPath")
             src = os.path.join(stage_tmp, "repo", skill_path.replace("/", os.sep))
             if not os.path.isdir(src):
                 return Result.failure(f"Path '{skill_path}' not found in repository")
