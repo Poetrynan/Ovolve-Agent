@@ -11,9 +11,10 @@ command_guard 原语）+ 规则表定级，作为工具策略管道的 COMMAND �
 
     ALLOW      机械安全——不带旗标，不参与定级
     REVIEW     需确认——网络出口、提权、装包、杀进程等"合理但要看一眼"
-    RESTRICTED 默认拒绝——破坏性、系统状态、远程代码执行、持久化。
-               对应管道的 DENY：**不可被任何权限档位自动放行**（CRITICAL 语义，
-               只有显式的单次人工批准可过），因为这类操作的失误不可撤回。
+    RESTRICTED 高危——破坏性、系统状态、远程代码执行、持久化。
+               这类操作的失误不可撤回，因此**不参与自动放行**：无论权限档位
+               如何都至少落到 ASK（CRITICAL 语义，只有显式人工批准可过）；
+               收紧到 DENY 由 `restrictedAction` 控制，默认 ask。
 
 规则表只收**形态**（shape），不收业务：`rm` 本身不是红线（日常清构建产物），
 `rm -rf /` 才是。每条规则带注释说明"为什么这条在此级别"——分级表里一条
@@ -32,7 +33,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from tool_policy import PolicyAction, PolicyDecision, PolicyLayer, PolicyRequest
 
@@ -40,7 +41,7 @@ from rust_adapters import command_guard as cg
 
 
 class Tier(str, Enum):
-    """命令文本的机械定级。ALLOW 不产生裁决；REVIEW→ASK；RESTRICTED→DENY。"""
+    """命令文本的机械定级。ALLOW 不产生裁决；REVIEW→ASK；RESTRICTED→ASK（可收紧为 DENY）。"""
 
     ALLOW = "allow"
     REVIEW = "review"
@@ -69,6 +70,8 @@ class Rule:
     words: tuple[str, ...] = ()
     regex: Optional[re.Pattern] = None
     why: str = ""
+    #: 结构化判定：词表与正则都压不平的二维关系（见 _INSTALL_TABLE）
+    matcher: Optional[Callable[[list[str]], bool]] = None
 
     def hit(self, tokens: list[str], text: str) -> bool:
         # 词表匹配带"首标签等价"：Windows 下可执行文件常带扩展名
@@ -80,6 +83,8 @@ class Rule:
                     return True
         if self.regex is not None and self.regex.search(text):
             return True
+        if self.matcher is not None:
+            return bool(self.matcher(tokens))
         return False
 
 
@@ -158,6 +163,99 @@ _BOMB_RULES: tuple[Rule, ...] = (
          why="fork 炸弹形态——自我复制的进程爆炸，一条命令拖死整台机器"),
 )
 
+# ── 装包判定表（CG-IR-01） ────────────────────────────────────────────────────
+#
+# "装包"在两个维度上都分化，一条正则压不平：
+#   * 同一管理器、不同子命令语义相反：`npm install` 引入外部代码，
+#     `npm uninstall` 是移除，`npm test` 跟装包无关。
+#     平正则要么漏掉 `npm ci`（按锁文件装，同样是引入外部代码），
+#     要么把 `npm uninstall` 一起收进来。
+#   * 不同管理器、同一动作叫法不同：npm `add` / gem `install` / apk `add` /
+#     go `get` / cargo `install`。
+# 所以收成二维表：管理器 → "会把外部代码带进本机"的子命令。逐格可注释、可增删，
+# 比一条越写越长的大正则好维护。
+
+#: 管理器前面可能出现的启动器：真正的管理器在它后面
+#: （`sudo apt install`、`python -m pip install`、`bash -c "npm install"`）。
+#: 判定顺序是先查表再查启动器，所以一个词可以同时是管理器（如 `uv`）。
+_INSTALL_LAUNCHERS = {
+    "sudo", "doas", "env", "nohup", "command", "time", "nice", "stdbuf",
+    "winpty", "uv", "python", "python3", "py", "bash", "sh", "zsh",
+    "powershell", "pwsh", "cmd",
+}
+
+#: 子命令之前允许出现的修饰词（`yarn global add`）
+_INSTALL_MODIFIERS = {"global", "workspace", "workspaces"}
+
+#: 值为空的元组 = 该管理器"取包即执行"，任何调用都算装包：
+#: `npx some-pkg` 会先把包拉下来再跑，装与执行在同一条命令里完成，
+#: 没有子命令可区分。
+_INSTALL_TABLE: dict[str, tuple[str, ...]] = {
+    # JS / Node
+    "npm": ("install", "i", "ci", "add", "it"),
+    "yarn": ("add", "install", "dlx", "global"),
+    "pnpm": ("add", "install", "i", "dlx"),
+    "bun": ("add", "install", "x"),
+    "npx": (),
+    "bunx": (),
+    # Python
+    "pip": ("install", "download"),
+    "pip3": ("install", "download"),
+    "uv": ("pip", "add", "tool"),
+    "uvx": (),
+    "poetry": ("add", "install"),
+    "conda": ("install", "create"),
+    "mamba": ("install",),
+    # 系统包管理
+    "apt": ("install",),
+    "apt-get": ("install",),
+    "brew": ("install", "reinstall", "upgrade"),
+    "choco": ("install", "upgrade"),
+    "winget": ("install", "upgrade"),
+    "dnf": ("install",),
+    "yum": ("install",),
+    "apk": ("add",),
+    "zypper": ("install", "in"),
+    # 其他语言
+    "gem": ("install",),
+    "cargo": ("install", "add"),
+    "go": ("get", "install"),
+    "composer": ("require", "install"),
+    "bundle": ("install",),
+    "dotnet": ("add", "restore"),
+}
+
+
+def _first_subcommand(rest: list[str]) -> str:
+    """跳过开关与修饰词，取出真正的子命令。"""
+    for tok in rest:
+        low = tok.lower()
+        if low.startswith("-") or low in _INSTALL_MODIFIERS:
+            continue
+        return low.split(".", 1)[0]
+    return ""
+
+
+def _is_install_command(tokens: list[str]) -> bool:
+    """管理器 × 子命令二维命中。见 ``_INSTALL_TABLE``。
+
+    只在前三个 token 里找管理器：再往后就是包参数了（`npm i lodash`
+    里的 `lodash` 不该被当成管理器）。遇到既不是启动器也不是开关的未知词就停
+    ——否则 `grep "npm install" README` 也会被当成装包。
+    """
+    for i, raw in enumerate(tokens[:3]):
+        tok = raw.lower().split(".", 1)[0]
+        verbs = _INSTALL_TABLE.get(tok)
+        if verbs is not None:
+            if not verbs:
+                return True  # 取包即执行型（npx/bunx/uvx）
+            return _first_subcommand(tokens[i + 1:]) in verbs
+        if tok.startswith("-") or tok in _INSTALL_LAUNCHERS:
+            continue
+        break
+    return False
+
+
 # ── REVIEW：合理但要人看一眼的形态 ────────────────────────────────────────────
 
 _V = Tier.REVIEW
@@ -172,7 +270,7 @@ _REVIEW_RULES: tuple[Rule, ...] = (
          words=("killall", "pkill", "taskkill"),
          why="按名杀进程——误伤面大于按 pid 杀"),
     Rule("CG-IR-01", FLAG_NETWORK, _V,
-         regex=re.compile(r"\b(npm|pip|pip3|yarn|pnpm|gem|cargo)\s+(i|install|add)\b", re.I),
+         matcher=_is_install_command,
          why="装包 = 把外部代码引入本机执行环境（依赖链风险）"),
     Rule("CG-NG-01", FLAG_NETWORK, _V,
          words=("ssh", "scp", "sftp", "ftp", "nc", "ncat", "netcat", "telnet"),
@@ -250,6 +348,9 @@ _ALL_RULES: tuple[Rule, ...] = (
 SHELL_TOOLS = frozenset({
     "shell_executor", "bash", "run_command", "python_executor",
     "cmd", "powershell", "shell",
+    # Carries a command line the same way the entries above do — risk_control
+    # already treats it as one when extracting the command for its own checks.
+    "native_action_chain",
 })
 
 #: 命令文本可能落在的 args 键（不同工具命名不一致）
@@ -354,7 +455,17 @@ def classify(command: str, *, egress: Optional[NetworkEgressPolicy] = None) -> C
         pass
 
     # 3) 网络出口策略（deny 恒胜 > closed 白名单外要问）
-    hosts = list(dict.fromkeys(cg.extract_hosts(text)))
+    # 抽取器不可用绝不能让整条命令"看不见出口"——那是把一次故障变成一次静默
+    # 放行。退到 IPv4 正则：域名这一维会漏，但取回词（curl/wget…）与装包表
+    # 仍在，最坏是少问一次而不是全瞎。
+    try:
+        hosts = list(dict.fromkeys(cg.extract_hosts(text) or ()))
+    except Exception:
+        try:
+            hosts = list(dict.fromkeys(
+                m.group(0) for m in re.finditer(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", text)))
+        except Exception:
+            hosts = []
     verdict.hosts = hosts
     if hosts:
         # 有出口意图 → 至少 REVIEW 级的网络旗标（级别抬升由 egress 裁决决定，
@@ -426,8 +537,46 @@ def reload_egress_policy() -> NetworkEgressPolicy:
 _CONTEXT_VERDICT_KEY = "_command_verdict"
 
 
+# ── RESTRICTED 的处置动作（渐进收紧） ──────────────────────────────────────────
+#
+# 规则表收的是形态，形态必然有交集：`rm -rf /tmp/build` 和 `rm -rf /` 命中
+# 同一条 fs-destructive 规则，前者是日常操作、后者是事故。分级器是新增能力，
+# 没有线上语料校准误报率，所以第一版 RESTRICTED 统一走 ASK：宁可多问一次，
+# 不可误杀一条正常命令打断工作流。等误报收敛后把 `restrictedAction` 切成
+# "deny" 即可收紧，无需改结构。
+_DEFAULT_RESTRICTED_ACTION = "ask"
+
+_restricted_action_cache: Optional[str] = None
+
+
+def _restricted_action() -> str:
+    """config.json `permissions.commandGuard.restrictedAction` → "ask" | "deny"。"""
+    global _restricted_action_cache
+    if _restricted_action_cache is None:
+        action = _DEFAULT_RESTRICTED_ACTION
+        try:
+            cfg_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                guard = (json.load(f).get("permissions") or {}).get("commandGuard") or {}
+            raw = str(guard.get("restrictedAction", "")).strip().lower()
+            if raw in ("ask", "deny"):
+                action = raw
+        except Exception:
+            action = _DEFAULT_RESTRICTED_ACTION  # 坏配置退回宽松档，不静默变严
+        _restricted_action_cache = action
+    return _restricted_action_cache
+
+
+def reload_command_guard_config() -> str:
+    """设置页改完配置后调用——主动失效缓存，返回当前生效动作。"""
+    global _restricted_action_cache
+    _restricted_action_cache = None
+    return _restricted_action()
+
+
 def make_command_guard_layer() -> Any:
-    """COMMAND 层：对命令类工具做内容分级，RESTRICTED→DENY、REVIEW→ASK。
+    """COMMAND 层：对命令类工具做内容分级，REVIEW→ASK；RESTRICTED→ASK/DENY 可配。
 
     层工厂而不是闭包直连：risk_control 在 _install_layers 里注册，测试里
     可以独立构造。层内异常由管道兜底（fail-safe = deny）。
@@ -445,12 +594,13 @@ def make_command_guard_layer() -> Any:
             pass  # context 可能不可写——审计丢了但不影响裁决
 
         if verdict.is_restricted:
+            deny = _restricted_action() == "deny"
             return PolicyDecision(
-                action=PolicyAction.DENY,
+                action=PolicyAction.DENY if deny else PolicyAction.ASK,
                 layer=PolicyLayer.COMMAND,
                 label="command-guard:restricted",
-                reason="命令命中默认拒绝形态（" +
-                       "；".join(verdict.reasons[:3]) + "）",
+                reason=("命令命中高危形态（" if deny else "命令命中高危形态，需确认后执行（")
+                       + "；".join(verdict.reasons[:3]) + "）",
             )
         if verdict.needs_review:
             return PolicyDecision(

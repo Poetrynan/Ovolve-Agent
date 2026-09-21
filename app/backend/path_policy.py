@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from path_guard import DEFAULT_BLACKLIST, READONLY_BASENAMES
+from rust_adapters import command_guard as cg
 
 #: Access values accepted in the YAML.
 RW, RO, NONE = "rw", "ro", "none"
@@ -396,15 +397,41 @@ class PathIntent:
     source: str  # "redir" | "arg" | "cd" | "literal"
 
 
-def extract_intents(command: str, cwd: str) -> list[PathIntent]:
-    """Best-effort path intents from a command line.
+def _split_command_segments(command: str) -> list[str]:
+    """按 shell 控制符切段：**引号感知**。
 
-    Misses are expected (``python -c 'open(...)'`` with no literal path, a
-    write through a variable). The OS sandbox is what catches those.
+    不直接用 ``cg.split_segments``：那个原语不看引号，``rm -rf "/a && /b"``
+    会被切成两段，第二段丢掉动词、写意图被降级成读——正好是分段要防的漏判。
+    这里只承认引号之外的 ``| & ;`` 与换行；``<`` ``>`` 是重定向不是分隔符。
     """
-    if not command or not isinstance(command, str):
-        return []
-    cwd = cwd or os.getcwd()
+    out: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    for ch in command:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = ""
+            continue
+        if ch in "\"'":
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in "|&;\n\r":
+            seg = "".join(buf).strip()
+            if seg:
+                out.append(seg)
+            buf = []
+            continue
+        buf.append(ch)
+    seg = "".join(buf).strip()
+    if seg:
+        out.append(seg)
+    return out
+
+
+def _scan_intents(command: str, cwd: str) -> list[PathIntent]:
+    """对**单段**命令做意图抽取。``extract_intents`` 的内层，不分段。"""
     found: list[PathIntent] = []
     seen: set[tuple[str, str]] = set()
 
@@ -488,10 +515,58 @@ def extract_intents(command: str, cwd: str) -> list[PathIntent]:
     return found
 
 
+def extract_intents(command: str, cwd: str) -> list[PathIntent]:
+    """Best-effort path intents from a command line.
+
+    Misses are expected (``python -c 'open(...)'`` with no literal path, a
+    write through a variable). The OS sandbox is what catches those.
+
+    复合命令**分段**判定：整条命令只有第一个词是动词，``ls /a && rm -rf /etc``
+    若按整条判定，后半段的写会被前半段的只读动词洗成 read——前缀一个无害命令
+    就能把破坏性操作伪装成只读。所以每段各自取动词，再合并。
+
+    合并取**并集**且写优先（同一路径 read 让位给 write）：并集保证不会相对
+    "整条判定"少判，写优先保证不会因为分段而漏掉写。代价是少数"先写后读同一
+    路径"的命令会偏严（多问一次），这在安全侧是可以接受的方向。
+    """
+    if not command or not isinstance(command, str):
+        return []
+    cwd = cwd or os.getcwd()
+
+    intents = list(_scan_intents(command, cwd))
+    stripped = command.strip()
+    for seg in _split_command_segments(command):
+        if seg.strip() == stripped:
+            continue  # 单段命令，不必再扫一遍
+        intents.extend(_scan_intents(seg, cwd))
+
+    best: dict[str, PathIntent] = {}
+    for it in intents:
+        cur = best.get(it.path)
+        if cur is None or (cur.access == "read" and it.access == "write"):
+            best[it.path] = it
+    return list(best.values())
+
+
 def extract_ips(command: str) -> list[str]:
     if not command:
         return []
     return [m.group(0) for m in _IPV4.finditer(command)]
+
+
+def extract_hosts(command: str) -> list[str]:
+    """命令文本里出现的所有 host：IPv4 字面量 + 域名（按出现顺序，小写去重）。
+
+    保守优先：`git clone https://github.com/a/b.git` 里的 `b.git` 也会被当成
+    host。多报一个 host 在最坏情况下只是多问一次（REVIEW），漏报一个 host 则是
+    真放行——宁可噪，不可漏。
+    """
+    if not command:
+        return []
+    try:
+        return list(cg.extract_hosts(command) or ())
+    except Exception:
+        return extract_ips(command)  # 抽取器挂了也不能让网络判定整块失效
 
 
 # ── policy ──────────────────────────────────────────────────────────────────
@@ -535,6 +610,8 @@ class PathPolicy:
     rules: list[FsRule] = field(default_factory=list)
     network_default: str = "allow"
     network_block: tuple = ()
+    #: 出口白名单。只在 ``network_default == "deny"`` 时起作用（见 check_network）。
+    network_allow: tuple = ()
     source: str = "built-in"
 
     # Fluent builders for tests and callers that skip YAML.
@@ -605,30 +682,42 @@ class PathPolicy:
         return PolicyVerdict(True, path=normed, access=access, rule=rule.raw)
 
     def check_network(self, command: str) -> PolicyVerdict:
-        if (self.network_default or "allow").lower() == "deny":
-            # A total network deny is a kernel-sandbox concern; here we only
-            # catch literal IPs that also sit on the block list, plus any IP
-            # at all when default=deny.
-            ips = extract_ips(command)
-            if ips:
+        """网络出口判定：**域名与 IP 同一套规则**，deny 先于 allow。
+
+        两条设计约束：
+
+        * 维度必须对齐。早期版本只看 IPv4 字面量，`curl https://evil.com/x`
+          里没有 IP 就直接放行——同一条策略对 IP 生效、对域名失效，等于没写。
+          现在 IP 走 CIDR、域名走**整段后缀**匹配（`evil.com` 命中
+          `sub.evil.com`，但不命中 `notevil.com`）。
+        * 序必须是 deny → allow → default。allow 命中**不能**翻掉 block 命中，
+          否则配了黑名单的用户加一条白名单就把黑名单废了。
+
+        真正的断网由内核沙箱负责；这一层负责的是"看得见的 host 别走偏"。
+        """
+        if not command:
+            return PolicyVerdict(True, access="network")
+        default = (self.network_default or "allow").lower()
+        blocked = _split_network_entries(self.network_block)
+        allowed = _split_network_entries(self.network_allow)
+
+        for host in extract_hosts(command):
+            hit = _host_rule_hit(host, blocked)
+            if hit:
                 return PolicyVerdict(
                     False,
-                    reason=f"Refused: network is denied by policy; command names {ips[0]}.",
-                    path=ips[0], access="network", rule="network.default",
+                    reason=f"Refused: `{host}` matches blocked entry `{hit}` in {self.source}.",
+                    path=host, access="network", rule=hit,
                 )
-        blocked = _parse_cidrs(self.network_block)
-        for ip_s in extract_ips(command):
-            try:
-                ip = ipaddress.ip_address(ip_s)
-            except ValueError:
-                continue
-            for net, raw in blocked:
-                if ip in net:
-                    return PolicyVerdict(
-                        False,
-                        reason=f"Refused: `{ip_s}` is in blocked range `{raw}`.",
-                        path=ip_s, access="network", rule=raw,
-                    )
+            if default == "deny":
+                # 白名单只在关闭模式下救人；开放模式下它本来就没有意义。
+                if _host_rule_hit(host, allowed):
+                    continue
+                return PolicyVerdict(
+                    False,
+                    reason=f"Refused: network is denied by policy; command names `{host}`.",
+                    path=host, access="network", rule="network.default",
+                )
         return PolicyVerdict(True, access="network")
 
     def evaluate_command(self, command: str, cwd: str = "") -> PolicyVerdict:
@@ -654,8 +743,49 @@ class PathPolicy:
             "network": {
                 "default": self.network_default,
                 "block": list(self.network_block),
+                "allow": list(self.network_allow),
             },
         }
+
+
+def _split_network_entries(entries: Iterable) -> tuple[list, list[str]]:
+    """把 `network.block` / `network.allow` 的条目拆成 (CIDR 列表, 域名列表)。
+
+    两种维度混在一个列表里是有意的：用户写策略时关心的是"这个出口要不要"，
+    不关心它是 IP 还是域名。拆不出来的（既非 CIDR 也不像域名）直接丢掉——
+    一条无法解析的规则如果当成"匹配一切"，黑名单会变成全拒。
+    """
+    domains: list[str] = []
+    for raw in entries or ():
+        s = str(raw).strip().lower()
+        if not s or "/" in s:
+            continue
+        if re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", s):
+            continue  # 裸 IP 由 _parse_cidrs 按 /32 收走
+        if re.match(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9-]+)+$", s):
+            domains.append(s)
+    return _parse_cidrs(entries), domains
+
+
+def _host_rule_hit(host: str, entries: tuple) -> Optional[str]:
+    """host 命中 (cidrs, domains) 中的哪一条；未命中返回 None。"""
+    cidrs, domains = entries
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None:
+        for net, raw in cidrs:
+            try:
+                if ip in net:
+                    return raw
+            except TypeError:  # v4/v6 混配，跳过
+                continue
+        return None
+    try:
+        return cg.domain_suffix_match(host, domains)
+    except Exception:
+        return None
 
 
 def _parse_cidrs(entries: Iterable) -> list[tuple[ipaddress._BaseNetwork, str]]:
@@ -767,6 +897,7 @@ def load_policy(workspace_root: str, *, mode: str = "workspace-write") -> PathPo
     fs_map = builtin_filesystem()
     net_default = "allow"
     net_block: list[str] = ["169.254.169.254/32", "169.254.0.0/16"]
+    net_allow: list[str] = []
     source = "built-in"
 
     path = _find_policy_file(ws)
@@ -791,6 +922,9 @@ def load_policy(workspace_root: str, *, mode: str = "workspace-write") -> PathPo
                 block = user_net.get("block") or []
                 if isinstance(block, list) and block:
                     net_block = [str(x) for x in block]
+                allow = user_net.get("allow") or []
+                if isinstance(allow, list) and allow:
+                    net_allow = [str(x) for x in allow]
 
     mode = (mode or "").strip().lower()
     if mode == "read-only":
@@ -808,6 +942,7 @@ def load_policy(workspace_root: str, *, mode: str = "workspace-write") -> PathPo
         workspace_root=_norm_path(ws),
         network_default=net_default,
         network_block=tuple(net_block),
+        network_allow=tuple(net_allow),
         source=source,
     )
     for key, access in fs_map.items():

@@ -35,8 +35,21 @@ filesystem:
 # Kernel-level CIDR filtering needs root on most desktops, so these ranges are
 # enforced by scanning the command line (and by the OS sandbox where it can
 # actually deny network). `default: allow` is required for pip/npm/git.
+#
+# `block` / `allow` both take IPv4 CIDRs *and* domain names in one list:
+#   - a CIDR matches a literal IP in the command;
+#   - a domain matches by whole-label suffix: `evil.com` matches
+#     `sub.evil.com` but not `notevil.com`.
+# Order is block -> allow -> default: a block hit is never overridden by an
+# allow hit. `allow` only matters when `default: deny` (closed mode) — that is
+# where you list the registries you still want reachable.
 network:
   default: allow
   block:
     - 169.254.169.254/32
     - 169.254.0.0/16
+    # - metadata.google.internal   # domain entries match by suffix
+  # allow:            # only read when default: deny
+  #   - registry.npmjs.org
+  #   - pypi.org
+  #   - github.com

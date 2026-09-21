@@ -7,6 +7,7 @@ import textwrap
 import pytest
 
 from path_policy import (
+    PathPolicy,
     PathPolicyError,
     extract_intents,
     load_policy,
@@ -130,3 +131,106 @@ def test_root_tmp_scratch_paths_allowed(tmp_path):
     assert policy.check_path("c:/tmp/sequence_search.py", "write").allowed
     assert policy.check_path("/tmp/scratch.py", "write").allowed
 
+
+
+# ── 复合命令分段：防止用无害前缀把写意图洗成读 ──────────────────────────────────
+
+def _access(command, path_tail, cwd="D:/ws"):
+    for it in extract_intents(command, cwd):
+        if it.path.replace("\\", "/").lower().endswith(path_tail.lower()):
+            return it.access
+    return None
+
+
+def test_compound_command_keeps_write_intent_of_later_segment():
+    """`ls` 前缀不得把后面 `rm -rf /etc/important` 的写判定洗成读。"""
+    for prefix in ("ls /workspace/a", "cat README.md", "echo hi", "pwd"):
+        for joiner in ("&&", ";", "||"):
+            cmd = f"{prefix} {joiner} rm -rf /etc/important"
+            assert _access(cmd, "/etc/important") == "write", cmd
+
+
+def test_compound_command_still_reads_first_segment():
+    assert _access("ls /workspace/a && rm -rf /etc/important", "/workspace/a") == "read"
+
+
+def test_write_inside_double_quotes_is_not_split_into_segments():
+    """引号里的 && 不是分隔符——切开会丢动词、把写降级成读。"""
+    intents = extract_intents('rm -rf "/a && /b"', "D:/ws")
+    assert any(i.access == "write" for i in intents)
+    # 只读意图一个都不许有：整条是同一个 rm 的参数
+    assert not any(i.access == "read" for i in intents)
+
+
+def test_single_segment_command_unchanged():
+    assert _access("rm -rf /tmp/build", "/tmp/build") == "write"
+    assert _access("ls /workspace/a", "/workspace/a") == "read"
+
+
+def test_redirect_in_later_segment_still_write():
+    assert _access("ls -la && cat a > out.txt", "out.txt") == "write"
+
+
+def test_segmentation_does_not_downgrade_existing_writes():
+    """先写后读同一路径：并集+写优先，不得因为分段把写降回读。"""
+    cmd = "cp ./src ./dst && cat ./dst"
+    assert _access(cmd, "/dst") == "write"
+
+
+# ── 网络出口：IP 与域名同一套规则，deny 先于 allow ─────────────────────────────
+
+def _net(command, default="allow", block=(), allow=()):
+    policy = PathPolicy(
+        workspace_root="D:/ws",
+        network_default=default,
+        network_block=tuple(block),
+        network_allow=tuple(allow),
+    )
+    return policy.check_network(command)
+
+
+def test_blocked_domain_is_denied():
+    assert not _net("curl https://evil.com/x", block=("evil.com",)).allowed
+
+
+def test_domain_block_matches_by_whole_label_suffix():
+    assert not _net("curl https://sub.evil.com/x", block=("evil.com",)).allowed
+    # 整段后缀语义：notevil.com 不是 evil.com 的子域
+    assert _net("curl https://notevil.com/x", block=("evil.com",)).allowed
+
+
+def test_builtin_metadata_cidr_still_denied():
+    v = _net("curl http://169.254.169.254/latest/meta-data/",
+             block=("169.254.169.254/32", "169.254.0.0/16"))
+    assert not v.allowed
+    assert v.rule == "169.254.169.254/32"
+
+
+def test_closed_mode_blocks_domains_not_just_ips():
+    """回归：早期只看 IPv4，域名出口在 default:deny 下照样放行。"""
+    assert not _net("curl https://api.github.com/x", default="deny").allowed
+
+
+def test_allowlist_rescues_in_closed_mode():
+    v = _net("curl https://registry.npmjs.org/lodash", default="deny",
+             allow=("registry.npmjs.org",))
+    assert v.allowed
+    assert _net("curl https://cdn.jsdelivr.net/x", default="deny",
+                allow=("registry.npmjs.org",)).allowed is False
+
+
+def test_block_is_never_overridden_by_allow():
+    v = _net("curl https://evil.com/x", default="deny",
+             block=("evil.com",), allow=("evil.com",))
+    assert not v.allowed
+    assert v.rule == "evil.com"
+
+
+def test_command_without_host_passes_closed_mode():
+    assert _net("npm install lodash", default="deny").allowed
+    assert _net("echo hello", default="deny").allowed
+
+
+def test_malformed_network_entries_are_ignored_not_wildcard():
+    """解析不出的规则不能变成"匹配一切"，否则黑名单=全拒。"""
+    assert _net("curl https://example.com/x", block=(":::", "  ", "not a host")).allowed

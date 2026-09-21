@@ -35,6 +35,10 @@ from tool_policy import (
     make_subagent_layer,
     sandbox_layer_status,
 )
+# command_classifier imports tool_policy only, never risk_control, so this
+# direction is cycle-free. It lives next to the tool_policy import because the
+# guard layer is registered into that same pipeline.
+from command_classifier import make_command_guard_layer
 
 
 class RiskLevel(Enum):
@@ -528,6 +532,9 @@ class RiskController:
         )
         self.pipeline.register(PolicyLayer.INHERITED, self._granted_permission_layer,
                                label="granted-permission")
+        self.pipeline.register(
+            PolicyLayer.COMMAND, make_command_guard_layer(), label="command-guard",
+        )
 
     def _global_risk_layer(self, req: PolicyRequest) -> Optional[PolicyDecision]:
         """GLOBAL layer: standing rules, the CRITICAL floor, then the risk table.

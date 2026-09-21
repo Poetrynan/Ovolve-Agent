@@ -42,6 +42,7 @@ class PolicyLayer(str, Enum):
     SENDER = "sender"
     SANDBOX = "sandbox"
     SUBAGENT = "subagent"
+    COMMAND = "command"
     INHERITED = "inherited"
 
 
@@ -57,8 +58,20 @@ LAYER_ORDER: tuple[PolicyLayer, ...] = (
     PolicyLayer.SENDER,
     PolicyLayer.SANDBOX,
     PolicyLayer.SUBAGENT,
+    PolicyLayer.COMMAND,
     PolicyLayer.INHERITED,
 )
+
+#: COMMAND sits between SUBAGENT and INHERITED on purpose. It grades the
+#: *content* of a command ("is this dangerous?"), so:
+#:
+#: * after SUBAGENT — a sub-agent's own denylist is a narrower, more specific
+#:   rule and should be seen first;
+#: * before INHERITED — the walk treats DENY as terminal and CLEAR as only able
+#:   to downgrade a prior ASK, so this ordering gives exactly the behaviour we
+#:   want: a RESTRICTED command cannot be unlocked by a standing grant, while a
+#:   merely REVIEW-worthy one can be cleared by the user having already granted
+#:   that class of permission.
 
 
 class PolicyAction(str, Enum):
