@@ -39,6 +39,7 @@ from typing import Any, Optional
 from enum import Enum
 from result import Result
 from storage import get_storage
+from attribution import attribution_from
 
 #: 内容哈希取前 16 个 hex 字符（64 bit）。碰撞概率在技能库这个量级
 #: （即使十万个技能）也远低于磁盘静默损坏，而 16 字符在日志/UI 里还读得下去。
@@ -311,6 +312,17 @@ class SkillEntry:
         #: 手动调用始终可用（能力三态声明可被用户覆盖，见 model_registry）。
         self.requires: list[str] = []
         self.license: str = ""
+        # ── 归属与许可 ──
+        # license / author 优先取 frontmatter 的声明；声明缺失时才去技能目录里
+        # 读 LICENSE* / NOTICE* 推断（见 attribution.py）。copyright 始终来自
+        # 文件本身——它是"这个包里写着谁"的证据，不是谁自称的。
+        #: 上游主页/仓库地址，frontmatter 的 homepage / upstream / source。
+        self.author: str = ""
+        self.upstream: str = ""
+        self.copyright: str = ""
+        #: license 是从目录里的许可文件推断出来的（而非 frontmatter 声明）。
+        #: 区分两者是为了让人知道这个结论有多硬。
+        self.license_from_file: bool = False
         self.compatibility: str = ""
         #: 归属：谁声明了这个技能。复数——同一个技能可以被多个 agent/仓库声明
         #: （市场装了一份，项目里又自己改了一份）。
@@ -438,7 +450,26 @@ class SkillLoader:
             r for r in read_list_field(frontmatter, "requires")
             if str(r).strip().lower() in KNOWN_MODEL_REQUIREMENTS
         ]
-        entry.license = str(frontmatter.get("license") or "")
+        # 归属：声明优先，缺失时回落到目录里的 LICENSE*/NOTICE*。
+        # 作者字段各家写法不一，逐个兜一遍再放弃。
+        attribution = attribution_from(
+            skill_dir,
+            declared_license=str(frontmatter.get("license") or ""),
+            declared_author=(
+                str(frontmatter.get("author") or "")
+                or str((frontmatter.get("metadata") or {}).get("author") or "")
+            ),
+            declared_upstream=(
+                str(frontmatter.get("upstream") or "")
+                or str(frontmatter.get("homepage") or "")
+                or str(frontmatter.get("source") or "")
+            ),
+        )
+        entry.license = attribution["license"]
+        entry.author = attribution["author"]
+        entry.copyright = attribution["copyright"]
+        entry.upstream = attribution["upstream"]
+        entry.license_from_file = attribution["licenseFromFile"]
         entry.compatibility = str(frontmatter.get("compatibility") or "")
 
 
@@ -829,6 +860,11 @@ class SkillLoader:
                 "requiresBins": entry.requires_bins,
                 "requiresAnyBins": entry.requires_any_bins,
                 "requiresReport": entry.requires_report,
+                "license": entry.license,
+                "author": entry.author,
+                "upstream": entry.upstream,
+                "copyright": entry.copyright,
+                "licenseFromFile": entry.license_from_file,
             })
         return result
 
@@ -938,6 +974,11 @@ class SkillLoader:
             "frontmatter": getattr(entry, "frontmatter", {}),
             "user_invocable": getattr(entry, "user_invocable", True),
             "disable_model_invocation": getattr(entry, "disable_model_invocation", False),
+            "license": getattr(entry, "license", ""),
+            "author": getattr(entry, "author", ""),
+            "upstream": getattr(entry, "upstream", ""),
+            "copyright": getattr(entry, "copyright", ""),
+            "licenseFromFile": getattr(entry, "license_from_file", False),
             "body": body,
         })
 

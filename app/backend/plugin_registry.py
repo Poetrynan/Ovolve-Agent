@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from result import Result
+from attribution import attribution_from
 
 #: Manifest filename. Fixed, not configurable — a plugin the user has to
 #: describe twice (once in a manifest, once in a setting) is not installable.
@@ -61,6 +62,14 @@ class PluginEntry:
     description: str = ""
     author: str = ""
     homepage: str = ""
+    # ── 归属与许可 ──
+    # 与技能侧同一套规则（见 attribution.py）：声明优先，缺失时回落到插件目录里
+    # 的 LICENSE*/NOTICE*。copyright 只认文件里写着的那一行，不认自称。
+    license: str = ""
+    copyright: str = ""
+    #: 上游仓库；没单独声明时沿用 homepage。
+    upstream: str = ""
+    license_from_file: bool = False
     #: ``loaded`` | ``disabled`` | ``broken``
     status: str = "loaded"
     error: str = ""
@@ -81,6 +90,10 @@ class PluginEntry:
             "description": self.description,
             "author": self.author,
             "homepage": self.homepage,
+            "license": self.license,
+            "copyright": self.copyright,
+            "upstream": self.upstream,
+            "licenseFromFile": self.license_from_file,
             "status": self.status,
             "error": self.error,
             "skills": list(self.skills),
@@ -89,6 +102,33 @@ class PluginEntry:
             "declaredSkills": len(self.declared.get("skills") or []),
             "declaredSubagents": len(self.declared.get("subagents") or []),
         }
+
+
+def _attribution_kwargs(plugin_dir: str, manifest: dict) -> dict:
+    """Resolve licence, copyright, author and upstream for one plugin.
+
+    Declared manifest values win; a licence file sitting next to the manifest
+    supplies only the fields the manifest left empty. A field with no evidence
+    stays empty rather than being filled with a plausible-looking default.
+    """
+    homepage = str(manifest.get("homepage") or "")
+    attribution = attribution_from(
+        plugin_dir,
+        declared_license=str(manifest.get("license") or ""),
+        declared_author=str(manifest.get("author") or ""),
+        declared_upstream=(
+            str(manifest.get("upstream") or "")
+            or str(manifest.get("repository") or "")
+            or homepage
+        ),
+    )
+    return {
+        "author": attribution["author"],
+        "license": attribution["license"],
+        "copyright": attribution["copyright"],
+        "upstream": attribution["upstream"],
+        "license_from_file": attribution["licenseFromFile"],
+    }
 
 
 def _read_manifest(plugin_dir: str) -> Result:
@@ -182,9 +222,11 @@ class PluginRegistry:
             root=plugin_dir,
             version=str(data.get("version") or ""),
             description=str(data.get("description") or ""),
-            author=str(data.get("author") or ""),
             homepage=str(data.get("homepage") or ""),
             declared=contributes,
+            # author 也由它给出：声明缺失时回落到 LICENSE* 里的版权人，
+            # 与技能侧保持一致，避免两处各有一套"作者是谁"的答案。
+            **_attribution_kwargs(plugin_dir, data),
             unsupported=sorted(
                 k for k in contributes if k not in SUPPORTED_CONTRIBUTIONS
             ),
