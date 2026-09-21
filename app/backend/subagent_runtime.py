@@ -389,6 +389,9 @@ class SubagentSession:
     idle_since: float = 0.0     # F6: 进入 idle 状态的时间（空闲钩子触发点）
     result_chars: int = 0
     error: str = ""
+    #: 发起这次派发的父工具调用 id（dispatch.py 塞进 ctx["call_id"]）。
+    #: 没有它，一批并发结果回来后无法区分哪条对应哪次派发。
+    caller_call_id: str = ""
 
     def to_public(self) -> dict:
         return {
@@ -397,6 +400,7 @@ class SubagentSession:
             "label": self.label or self.subagent_type,
             "parentSessionId": self.parent_session_id,
             "childSessionId": self.child_session_id,
+            "callerCallId": self.caller_call_id or None,
             "status": self.status.value,
             "createdAt": self.created_at,
             "startedAt": self.started_at or None,
@@ -501,6 +505,7 @@ class SubagentRuntime:
         result_schema: Any = None,
         model_override: Optional[str] = None,
         run_id: str = "",
+        caller_call_id: str = "",
     ) -> dict:
         """派发一个后台子代理，**立即**返回 ``{run_id, status: "backgrounded"}``。
 
@@ -522,6 +527,7 @@ class SubagentRuntime:
                 out = await self.spawn_one(
                     subagent_type, prompt, parent_ctx, label=label,
                     model_override=model_override, result_schema=result_schema,
+                    caller_call_id=caller_call_id,
                 )
                 entry.update(
                     done=True, ok=bool(out.get("ok")),
@@ -744,6 +750,7 @@ class SubagentRuntime:
                 finished_at=sess.finished_at,
                 result_chars=sess.result_chars,
                 error=sess.error,
+                caller_call_id=sess.caller_call_id or "",
             )
         except Exception:
             pass  # bookkeeping must never break a turn
@@ -771,6 +778,7 @@ class SubagentRuntime:
         role: str = "",
         fork: bool = False,
         result_schema: Any = None,
+        caller_call_id: str = "",
     ) -> dict:
         """
         Run ONE sub-agent turn to completion and return a summary dict.
@@ -785,6 +793,10 @@ class SubagentRuntime:
 
         `role` narrows the persona's tool allowlist to a TeamBoard RoleSpec
         (see :func:`resolve_child_allowlist`). Empty string = no extra narrowing.
+
+        `caller_call_id` is the parent tool call that asked for this run. It is
+        stored on the ledger row and echoed back in the result, so a batch of
+        concurrent results can be matched to the dispatches that produced them.
 
         `defer_merge` is for batches (UA3): a writable sub-agent's changes land in
         a private overlay, and when several siblings ran together only the batch
@@ -803,6 +815,7 @@ class SubagentRuntime:
                 parent_session_id=parent_ctx.get("session_id") or "",
                 child_session_id="", status=SubagentStatus.SPAWN_ERROR,
                 error=f"Unknown subagent_type '{subagent_type}'",
+                caller_call_id=caller_call_id,
             )
             sess.finished_at = time.time()
             self._sessions[sub_id] = sess
@@ -811,6 +824,7 @@ class SubagentRuntime:
                 "text": "", "subagent_id": sub_id,
                 "error": f"Unknown subagent_type '{subagent_type}'. Available: {known}",
                 "status": SubagentStatus.SPAWN_ERROR.value,  # F6: 终态标记
+                "caller_call_id": caller_call_id,
             }
 
         parent_session = parent_ctx.get("session_id") or ""
@@ -843,6 +857,7 @@ class SubagentRuntime:
             label=label or subagent_type,
             parent_session_id=parent_session,
             child_session_id=child_session,
+            caller_call_id=caller_call_id,
         )
         self._sessions[sub_id] = sess
         # Self-register the running Task so ``kill()`` has a handle regardless of
@@ -1054,6 +1069,7 @@ class SubagentRuntime:
                     "text": _truncate(str(text)),
                     "error": err or (sess.error if stopped_incomplete else ""),
                     "subagent_id": sub_id,
+                    "caller_call_id": caller_call_id,
                     "stale": stopped_incomplete,
                     "final_marker": marker_seen,
                 }
@@ -1080,6 +1096,7 @@ class SubagentRuntime:
             out = {
                 "ok": False, "type": subagent_type, "label": label, "text": "",
                 "error": sess.error, "subagent_id": sub_id,
+                "caller_call_id": caller_call_id,
             }
         except asyncio.CancelledError:
             sess.error = "killed by user"
@@ -1087,6 +1104,7 @@ class SubagentRuntime:
             out = {
                 "ok": False, "type": subagent_type, "label": label, "text": "",
                 "error": sess.error, "subagent_id": sub_id,
+                "caller_call_id": caller_call_id,
             }
         except Exception as e:
             sess.error = f"sub-agent crashed: {e}"
@@ -1094,6 +1112,7 @@ class SubagentRuntime:
             out = {
                 "ok": False, "type": subagent_type, "label": label, "text": "",
                 "error": sess.error, "subagent_id": sub_id,
+                "caller_call_id": caller_call_id,
             }
         finally:
             # Teardown: hooks, DB cleanup, map cleanup.
@@ -1136,7 +1155,8 @@ class SubagentRuntime:
             return f"合并子代理改动时出错：{exc}"
 
 
-    async def spawn_batch(self, tasks: list[dict], parent_ctx: dict, model_override: Optional[str] = None) -> list[dict]:
+    async def spawn_batch(self, tasks: list[dict], parent_ctx: dict, model_override: Optional[str] = None,
+                          caller_call_id: str = "") -> list[dict]:
         """
         Run every sub-task concurrently. The semaphore bounds real parallelism.
 
@@ -1172,6 +1192,9 @@ class SubagentRuntime:
                     model_override=spec.get("model") or model_override,
                     role=str(spec.get("role") or ""),
                     result_schema=spec.get("result_schema"),
+                    # 同一次批派发的所有子结果共享这个父调用 id——父侧就是靠它
+                    # 把并发回来的结果重新对回各自的任务。
+                    caller_call_id=str(spec.get("caller_call_id") or caller_call_id),
                 ))
             )
 
@@ -1862,7 +1885,7 @@ def _dep_prefix(task: dict, by_id: dict[str, dict]) -> str:
 
 
 async def _run_dag(runtime: "SubagentRuntime", tasks: list[dict], ctx: dict,
-                   layers: list[list[int]]) -> list[dict]:
+                   layers: list[list[int]], caller_call_id: str = "") -> list[dict]:
     """Advance the graph one layer at a time, reusing `spawn_batch` per layer.
 
     Each layer is a plain parallel batch, so the concurrency cap and the
@@ -1949,7 +1972,8 @@ async def _run_dag(runtime: "SubagentRuntime", tasks: list[dict], ctx: dict,
 
             if not runnable_specs:
                 continue
-            results = await runtime.spawn_batch(runnable_specs, ctx)
+            results = await runtime.spawn_batch(runnable_specs, ctx,
+                                                caller_call_id=caller_call_id)
             for j, r in enumerate(results):
                 i = runnable_idx[j]
                 out[i] = r
@@ -2019,6 +2043,11 @@ async def _task_handler(args: dict, ctx: dict) -> Result:
     if not tasks:
         return Result.failure("No tasks specified.")
 
+    # 本次工具调用的 id（dispatch 塞进 ctx）。它随每一次派发一起下发，回来时
+    # 又随每一条结果一起返回——一批并发结果因此可以对回各自的派发，而不是
+    # 只看谁先回来。取不到就留空：调用链断了不该让派发本身失败。
+    caller_call_id = str((ctx or {}).get("call_id") or "")
+
     # Per-call model override: top-level `model` applies to every task that
     # doesn't name its own. Wins over the persona's configured model; a task's
     # own `model` wins over the top-level one. None everywhere = inherit parent.
@@ -2055,6 +2084,7 @@ async def _task_handler(args: dict, ctx: dict) -> Result:
                 label=str(t.get("label") or ""),
                 result_schema=t.get("result_schema"),
                 model_override=t.get("model"),
+                caller_call_id=caller_call_id,
             )
             dispatched.append((got["run_id"], t))
         lines = [
@@ -2081,9 +2111,10 @@ async def _task_handler(args: dict, ctx: dict) -> Result:
             # A tool result, not an exception: the parent wrote the graph, so
             # the parent is the one who can fix it.
             return Result.failure(err)
-        results = await _run_dag(runtime, tasks, ctx, layers)
+        results = await _run_dag(runtime, tasks, ctx, layers,
+                                 caller_call_id=caller_call_id)
     else:
-        results = await runtime.spawn_batch(tasks, ctx)
+        results = await runtime.spawn_batch(tasks, ctx, caller_call_id=caller_call_id)
 
     # 契约执行已在 spawn_batch/_run_dag 内部完成（单一执行点原则）。
     # P0-1 修复后，契约失败只挂警告、不改写 ok、不销毁 overlay。

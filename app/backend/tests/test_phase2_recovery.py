@@ -407,3 +407,95 @@ def test_0002_applies_to_a_database_that_already_ran_0001(tmp_path):
         assert status["pending"] == []
     finally:
         st.close()
+
+
+# ── 0021–0024 ────────────────────────────────────────────────────────────────
+
+def _ids(st):
+    return [m["id"] for m in st.migration_status()["applied"]]
+
+
+def test_migrations_0021_to_0024_are_registered(tmp_path):
+    st = make_storage(tmp_path)
+    try:
+        applied = _ids(st)
+        for mid in ("0021_capability_probes", "0022_memory_hygiene",
+                    "0023_workflow_patterns", "0024_caller_call_id"):
+            assert mid in applied, mid
+        assert st.migration_status()["pending"] == []
+    finally:
+        st.close()
+
+
+def test_0024_self_heals_a_ledger_that_lies(tmp_path):
+    """回归：台账记着 0001 却没有 subagent_runs 表。
+
+    0024 在这种库上裸 ALTER/建索引会抛 no such table，runner 当失败处理并
+    回滚——把本次已跑完的 0002–0023 一起抹掉。所以它必须先自愈建表。
+    """
+    import sqlite3
+
+    db_dir = tmp_path / "db"
+    db_dir.mkdir()
+    c = sqlite3.connect(str(db_dir / "configs.db"))
+    c.execute("CREATE TABLE schema_migration (id TEXT PRIMARY KEY, checksum TEXT,"
+              " app_version TEXT, applied_at INTEGER)")
+    c.execute("INSERT INTO schema_migration (id) VALUES ('0001_subagent_runs')")
+    c.commit()
+    c.close()
+
+    st = make_storage(tmp_path)
+    try:
+        cols = [r["name"] for r in
+                st._db("sessions").execute("PRAGMA table_info(subagent_runs)").fetchall()]
+        assert "caller_call_id" in cols
+        # 0002 必须还在——0024 失败会把这条一起回滚掉
+        assert "0002_tool_side_effects" in _ids(st)
+        assert st.migration_status()["pending"] == []
+        assert getattr(st, "recovery_mode", None) != "compat"
+    finally:
+        st.close()
+
+
+def test_migrations_are_idempotent_on_second_open(tmp_path):
+    st = make_storage(tmp_path)
+    try:
+        assert st.migration_status()["pending"] == []
+    finally:
+        st.close()
+    again = make_storage(tmp_path)
+    try:
+        assert again.migration_status()["pending"] == []
+        assert "0024_caller_call_id" in _ids(again)
+    finally:
+        again.close()
+
+
+def test_caller_call_id_round_trips_through_the_ledger(tmp_path):
+    st = make_storage(tmp_path)
+    try:
+        st.upsert_subagent_run("sub-1", parent_session_id="p", status="completed",
+                               caller_call_id="call-abc")
+        st.upsert_subagent_run("sub-2", parent_session_id="p", status="completed",
+                               caller_call_id="call-abc")
+        st.upsert_subagent_run("sub-3", parent_session_id="p", status="completed",
+                               caller_call_id="call-xyz")
+        rows = st.list_subagent_runs("p")
+        by_caller = {}
+        for r in rows:
+            by_caller.setdefault(r["caller_call_id"], []).append(r["subagent_id"])
+        assert sorted(by_caller["call-abc"]) == ["sub-1", "sub-2"]
+        assert by_caller["call-xyz"] == ["sub-3"]
+    finally:
+        st.close()
+
+
+def test_legacy_rows_without_the_column_read_as_empty(tmp_path):
+    """老数据没有 caller_call_id——读侧必须拿到空串而不是 KeyError。"""
+    st = make_storage(tmp_path)
+    try:
+        st.upsert_subagent_run("sub-old", parent_session_id="p", status="completed")
+        row = [r for r in st.list_subagent_runs("p") if r["subagent_id"] == "sub-old"][0]
+        assert row["caller_call_id"] == ""
+    finally:
+        st.close()

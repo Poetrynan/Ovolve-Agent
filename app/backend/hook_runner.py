@@ -21,6 +21,10 @@ Schema::
            "hooks": [{"type": "process", "command": "python",
                       "args": ["${OVOLVE_PROJECT_DIR}/scripts/guard.py"],
                       "timeoutMs": 5000}]}
+        ],
+        "SubagentStart": [
+          {"hooks": [{"type": "http", "url": "https://hooks.internal/subagent",
+                      "method": "POST", "timeoutMs": 3000}]}
         ]
       }
     }
@@ -34,11 +38,24 @@ Protocol (Standard deterministic lifecycle hook protocol):
   - PreToolUse / PermissionRequest may return
     ``permissionDecision: allow|ask|deny``
   - Stop may return ``continue: true`` (honoured up to STOP_CONTINUE_LIMIT)
-  - PreCompact / SubagentStop are observe-only: exit 2 is recorded but cannot
-    cancel the fold or resurrect the sub-agent, because neither caller consults
-    the outcome. Use them for archiving and post-checks, not for veto.
+  - PreCompact / PostCompact / SubagentStart / SubagentStop are observe-only:
+    exit 2 is recorded but cannot cancel the fold or resurrect the sub-agent,
+    because neither caller consults the outcome. Use them for archiving and
+    post-checks, not for veto.
   - PreCompact receives ``messageCount`` instead of the transcript — the whole
     history is too large to pipe and the likeliest place for secrets to sit.
+    PostCompact likewise receives the fold report *without* the summary, which
+    is the transcript in condensed form.
+
+``type: http`` hooks post the same JSON envelope as the process hooks' stdin and
+read the response body with the same protocol. Response handling:
+
+    2xx          -> parse as hook output
+    4xx          -> warn and continue. A 4xx means the *request* was malformed;
+                    a hook is a side channel and must not stall the user's turn
+                    over our own mistake.
+    5xx / unreachable / timeout
+                 -> recorded as a failed hook; also non-blocking.
 
 SECURITY: hooks run arbitrary local commands with the agent's privileges. Only
 files under the user's own config paths are read, and the runner stays disabled
@@ -52,12 +69,14 @@ import os
 import re
 import shlex
 import time
+import urllib.error
 from typing import Any, Optional
 
+import web_outbound
 from result import Result
 from event_bus import get_event_bus, Event
 
-# The nine supported hook events. Anything else in a config is unsupported and
+# The eleven supported hook events. Anything else in a config is unsupported and
 # reported rather than silently ignored.
 HOOK_EVENTS = (
     "SessionStart",
@@ -67,6 +86,8 @@ HOOK_EVENTS = (
     "PostToolUse",
     "PostToolUseFailure",
     "PreCompact",
+    "PostCompact",
+    "SubagentStart",
     "SubagentStop",
     "Stop",
 )
@@ -85,21 +106,40 @@ BUS_TO_HOOK = {
     "permission_request": ("PermissionRequest",),
     "tool_result": ("PostToolUse", "PostToolUseFailure"),
     "session_before_compact": ("PreCompact",),
-    "subagent_state": ("SubagentStop",),
+    # `context_folded` already existed on the bus (the compactor emits it with
+    # the fold report) — it was simply absent here, so there was no hook point
+    # *after* a fold.
+    "context_folded": ("PostCompact",),
+    "subagent_state": ("SubagentStart", "SubagentStop"),
     "output": ("Stop",),
 }
 
-#: ``subagent_state`` fires on every transition, including spawning/running.
-#: SubagentStop is about the *end* of a sub-agent, so only these statuses fire
-#: it. Kept as plain strings rather than importing SubagentStatus: hook_runner is
-#: imported by the router, and subagent_runtime imports the router.
+#: ``subagent_state`` fires on every transition. SubagentStop is about the *end*
+#: of a sub-agent, so only these statuses fire it. Kept as plain strings rather
+#: than importing SubagentStatus: hook_runner is imported by the router, and
+#: subagent_runtime imports the router.
+#: Mirrors subagent_runtime.TERMINAL_STATUSES — an end state that is missing
+#: here means "the sub-agent died but the hook never ran".
 SUBAGENT_TERMINAL_STATUSES = frozenset({
     "completed", "error", "killed", "timeout", "stale",
+    "spawn_error", "lost", "orphan_recovered",
 })
+
+#: The mirror image of the set above: which status means "a sub-agent just came
+#: to life". Only ``spawning`` — it is the initial value of
+#: ``SubagentSession.status`` and is emitted exactly once, whereas the later
+#: states can repeat. Putting ``running`` here would fire the user's script
+#: again on every progress update.
+SUBAGENT_START_STATUSES = frozenset({"spawning"})
 
 DEFAULT_TIMEOUT_MS = 60_000
 DEFAULT_MAX_OUTPUT = 64 * 1024
 STOP_CONTINUE_LIMIT = 3
+
+#: Fields accepted by a ``type: http`` hook.
+HTTP_HOOK_FIELDS = {"type", "url", "method", "headers", "body",
+                    "timeoutMs", "statusMessage"}
+HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 # Strict output schema: an unrecognised key invalidates the whole payload.
 ALLOWED_OUTPUT_KEYS = {
@@ -261,9 +301,12 @@ class HookRunner:
             return None
 
         hook_type = spec.get("type", "command")
-        if hook_type not in ("command", "process"):
+        if hook_type not in ("command", "process", "http"):
             self.problems.append(f"{path}: {event_name} unknown hook type {hook_type!r}")
             return None
+
+        if hook_type == "http":
+            return self._validate_http_hook(spec, event_name, path)
 
         command = spec.get("command")
         if not command or not isinstance(command, str):
@@ -306,6 +349,60 @@ class HookRunner:
             "source": path,
         }
 
+    def _validate_http_hook(self, spec: dict, event_name: str, path: str) -> Optional[dict]:
+        """Validate an ``http`` hook: URL + method + optional headers/body.
+
+        An http hook posts the same JSON envelope the process hooks receive on
+        stdin, which is why it needs no ``command``.
+        """
+        url = spec.get("url")
+        if not url or not isinstance(url, str):
+            self.problems.append(f"{path}: {event_name} http hook needs a 'url' string")
+            return None
+
+        method = str(spec.get("method", "POST")).upper()
+        if method not in HTTP_METHODS:
+            self.problems.append(
+                f"{path}: {event_name} http hook method {method!r} not in "
+                f"{', '.join(sorted(HTTP_METHODS))}")
+            return None
+
+        headers = spec.get("headers") or {}
+        if not isinstance(headers, dict):
+            self.problems.append(f"{path}: {event_name} http hook 'headers' must be an object")
+            return None
+        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in headers.items()):
+            self.problems.append(
+                f"{path}: {event_name} http hook 'headers' must be string -> string")
+            return None
+
+        extra = set(spec) - HTTP_HOOK_FIELDS
+        if extra:
+            self.problems.append(
+                f"{path}: {event_name} http hook has fields not valid for its type: "
+                f"{', '.join(sorted(extra))}"
+            )
+            return None
+
+        if isinstance(spec.get("timeoutMs"), (int, float)) and spec["timeoutMs"] > 0:
+            timeout_ms = int(spec["timeoutMs"])
+        else:
+            timeout_ms = self.timeout_ms
+
+        return {
+            "type": "http",
+            "command": url,          # reuse the log/record field
+            "args": [],
+            "shell": None,
+            "url": self._expand(url),
+            "method": method,
+            "headers": {str(k): self._expand(str(v)) for k, v in headers.items()},
+            "body": spec.get("body"),
+            "timeout_ms": timeout_ms,
+            "status_message": spec.get("statusMessage", ""),
+            "source": path,
+        }
+
     # ── template expansion ────────────────────────────────────────
 
     def _variables(self) -> dict:
@@ -327,6 +424,9 @@ class HookRunner:
     async def run_one(self, spec: dict, match_value: str, hook_event: str,
                       payload: dict) -> HookOutcome:
         """Run a single hook subprocess. Returns HookOutcome regardless of crash."""
+        if spec["type"] == "http":
+            return await self._run_http(spec, hook_event, match_value, payload)
+
         command = self._expand(spec["command"])
         args = [self._expand(a) for a in spec["args"]]
 
@@ -396,7 +496,94 @@ class HookRunner:
             self._record(spec, hook_event, match_value, "error", duration, err_msg)
             return HookOutcome("error", reason=err_msg, duration_ms=duration)
 
-        # If stdout is empty: pass with no side effects.
+        return self._parse_output(out, spec, hook_event, match_value, duration)
+
+    async def _run_http(self, spec: dict, hook_event: str, match_value: str,
+                        payload: dict) -> HookOutcome:
+        """Run a ``type: http`` hook.
+
+        Response handling, in order — this ordering is deliberate and covered by
+        tests, because the obvious implementation blocks the user's turn on a
+        server bug:
+
+            2xx        -> parse the body with the same protocol as stdout
+            4xx        -> warn and continue. A 400 means *we* built the request
+                          wrong; a hook is a side channel and must never stall
+                          the main flow over our own mistake.
+            5xx / unreachable / timeout
+                       -> treated as a failed hook (``error`` / ``timeout``),
+                          which is recorded but likewise does not block.
+
+        The request goes through ``web_outbound`` so it honours the same proxy
+        and egress policy as every other outbound call in the app.
+        """
+        body = None
+        if spec.get("body") is not None:
+            body = json.dumps(spec["body"], ensure_ascii=False).encode()
+        headers = dict(spec.get("headers") or {})
+        if body is not None and not any(k.lower() == "content-type" for k in headers):
+            headers["Content-Type"] = "application/json"
+
+        envelope = json.dumps({
+            "event": hook_event,
+            "matchValue": match_value,
+            "payload": payload,
+        }, ensure_ascii=False).encode()
+
+        if spec["method"] == "GET":
+            data = None
+        else:
+            data = body if body is not None else envelope
+
+        t0 = time.time()
+        try:
+            resp = await asyncio.wait_for(
+                asyncio.to_thread(
+                    web_outbound.open_url,
+                    spec["url"],
+                    timeout=spec["timeout_ms"] / 1000.0,
+                    headers=headers,
+                    data=data,
+                    method=spec["method"],
+                ),
+                timeout=spec["timeout_ms"] / 1000.0 + 1,
+            )
+            try:
+                raw = resp.read()
+            finally:
+                close = getattr(resp, "close", None)
+                if close:
+                    close()
+        except asyncio.TimeoutError:
+            duration = int((time.time() - t0) * 1000)
+            self._record(spec, hook_event, match_value, "timeout", duration,
+                         f"no response within {spec['timeout_ms']}ms")
+            return HookOutcome("timeout", duration_ms=duration,
+                               reason=f"HTTP hook timed out after {spec['timeout_ms']}ms")
+        except urllib.error.HTTPError as e:
+            duration = int((time.time() - t0) * 1000)
+            code = getattr(e, "code", 0) or 0
+            if 400 <= code < 500:
+                # Our request was wrong, not the user's turn. Warn and move on.
+                self._record(spec, hook_event, match_value, "warning", duration,
+                             f"HTTP {code}")
+                return HookOutcome("pass", duration_ms=duration,
+                                   reason=f"HTTP {code} (4xx does not block the main flow)")
+            self._record(spec, hook_event, match_value, "error", duration, f"HTTP {code}")
+            return HookOutcome("error", reason=f"HTTP {code}", duration_ms=duration)
+        except Exception as e:
+            duration = int((time.time() - t0) * 1000)
+            self._record(spec, hook_event, match_value, "error", duration, str(e))
+            return HookOutcome("error", reason=str(e), duration_ms=duration)
+
+        duration = int((time.time() - t0) * 1000)
+        out = raw[:self.max_output].decode(errors="replace").strip()
+        return self._parse_output(out, spec, hook_event, match_value, duration)
+
+    def _parse_output(self, out: str, spec: dict, hook_event: str, match_value: str,
+                      duration: int) -> HookOutcome:
+        """Turn hook stdout / HTTP 2xx body into a HookOutcome (strict schema)."""
+        # If the output is empty: pass with no side effects.
         if not out:
             self._record(spec, hook_event, match_value, "pass", duration)
             return HookOutcome("pass", duration_ms=duration)
@@ -406,12 +593,12 @@ class HookRunner:
             data = json.loads(out)
         except json.JSONDecodeError as e:
             self._record(spec, hook_event, match_value, "invalid", duration, str(e))
-            return HookOutcome("invalid", reason=f"stdout not JSON: {e}",
+            return HookOutcome("invalid", reason=f"output not JSON: {e}",
                                duration_ms=duration)
         if not isinstance(data, dict):
             self._record(spec, hook_event, match_value, "invalid", duration,
-                         "stdout must be a JSON object")
-            return HookOutcome("invalid", reason="stdout must be a JSON object",
+                         "output must be a JSON object")
+            return HookOutcome("invalid", reason="output must be a JSON object",
                                duration_ms=duration)
         extra = set(data) - ALLOWED_OUTPUT_KEYS
         if extra:
@@ -476,7 +663,7 @@ class HookRunner:
             # Match on persona, so a hook can target `coder` without also
             # running after every `explore`.
             return str(payload.get("subagentType", ""))
-        if bus_event_name == "session_before_compact":
+        if bus_event_name in ("session_before_compact", "context_folded"):
             # "manual" when the user asked for the fold, "auto" when a threshold
             # tripped — the only discriminator worth matching on here.
             return "manual" if payload.get("manual") else "auto"
@@ -495,6 +682,12 @@ class HookRunner:
             slim = {k: v for k, v in payload.items() if k != "messages"}
             slim["messageCount"] = len(payload.get("messages") or [])
             return slim
+        if bus_event_name == "context_folded":
+            # Same reasoning, other end of the fold: the summary *is* the
+            # transcript, only shorter. A hook that needs the text can read the
+            # session store; the metadata below is enough to decide whether to
+            # look.
+            return {k: v for k, v in payload.items() if k != "summary"}
         return payload
 
     def _hook_event_for(self, bus_event_name: str, payload: dict) -> str:
@@ -506,11 +699,15 @@ class HookRunner:
             ok = (payload.get("result") or {}).get("ok", True)
             return "PostToolUse" if ok else "PostToolUseFailure"
         if bus_event_name == "subagent_state":
+            status = str(payload.get("status", ""))
+            if status in SUBAGENT_START_STATUSES:
+                return "SubagentStart"
             # Only the end of a sub-agent's life is a "Stop". Firing on
             # spawning/running would run the user's script three times per
             # sub-agent and mean something different each time.
-            if str(payload.get("status", "")) not in SUBAGENT_TERMINAL_STATUSES:
+            if status not in SUBAGENT_TERMINAL_STATUSES:
                 return ""
+            return "SubagentStop"
         return candidates[0]
 
     async def fire(self, bus_event_name: str, payload: dict) -> list[HookOutcome]:

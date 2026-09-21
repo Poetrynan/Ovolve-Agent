@@ -621,6 +621,18 @@ class Storage:
         ("0020_learning_item_operations",
          "persistent learning item mutation operation ledger",
          "_mig_0020_learning_item_operations"),
+        ("0021_capability_probes",
+         "capability probe ledger: what was probed, when, and how it answered",
+         "_mig_0021_capability_probes"),
+        ("0022_memory_hygiene",
+         "memory hygiene batches: what was archived/pruned and why",
+         "_mig_0022_memory_hygiene"),
+        ("0023_workflow_patterns",
+         "recurring workflow patterns distilled from run history",
+         "_mig_0023_workflow_patterns"),
+        ("0024_caller_call_id",
+         "subagent runs remember the parent tool call that dispatched them",
+         "_mig_0024_caller_call_id"),
     )
 
     def _app_version(self) -> str:
@@ -1552,6 +1564,113 @@ class Storage:
         cm.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_li_ops_idem ON learning_item_operations(idempotency_key) WHERE idempotency_key <> ''")
         cm.commit()
 
+    def _mig_0021_capability_probes(self) -> None:
+        """Capability probe ledger.
+
+        "Do we have this capability?" is currently answered by trying and
+        seeing whether it throws — which costs a round trip every time and
+        leaves no record of what the answer was. This table makes the answer
+        persistent and queryable by ``(capability_id, probed_at)``.
+
+        ``probe_key`` is unique per (capability, target) so re-probing the same
+        thing updates in place instead of stacking rows.
+        """
+        c = self._dbs["memory"]
+        c.execute("""CREATE TABLE IF NOT EXISTS capability_probes (
+            probe_key TEXT PRIMARY KEY,
+            capability_id TEXT NOT NULL,
+            target TEXT NOT NULL DEFAULT '',
+            outcome TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT '',
+            probed_at REAL NOT NULL,
+            expires_at REAL NOT NULL DEFAULT 0
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_cap_probe_cap"
+                  " ON capability_probes(capability_id, probed_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_cap_probe_expiry"
+                  " ON capability_probes(expires_at)")
+        c.commit()
+
+    def _mig_0022_memory_hygiene(self) -> None:
+        """Memory hygiene batches.
+
+        Pruning memory is a destructive, bulk operation with no undo, and until
+        now it left nothing behind: after a sweep there was no way to answer
+        "what did we throw away and on what basis". One row per batch plus one
+        row per discarded entry.
+        """
+        c = self._dbs["memory"]
+        c.execute("""CREATE TABLE IF NOT EXISTS memory_hygiene_batches (
+            batch_id TEXT PRIMARY KEY,
+            scope TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            entries_before INTEGER NOT NULL DEFAULT 0,
+            entries_removed INTEGER NOT NULL DEFAULT 0,
+            started_at REAL NOT NULL,
+            finished_at REAL NOT NULL DEFAULT 0
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS memory_hygiene_items (
+            batch_id TEXT NOT NULL,
+            memory_id TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            content_preview TEXT NOT NULL DEFAULT '',
+            removed_at REAL NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_hygiene_batch"
+                  " ON memory_hygiene_items(batch_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_hygiene_memory"
+                  " ON memory_hygiene_items(memory_id)")
+        c.commit()
+
+    def _mig_0023_workflow_patterns(self) -> None:
+        """Workflow patterns distilled from run history.
+
+        A pattern is identified by its signature (the ordered shape of the steps,
+        not their content), so the same workflow arriving with different file
+        names folds onto one row and its hit count means something.
+        """
+        c = self._dbs["memory"]
+        c.execute("""CREATE TABLE IF NOT EXISTS workflow_patterns (
+            signature TEXT PRIMARY KEY,
+            label TEXT NOT NULL DEFAULT '',
+            hit_count INTEGER NOT NULL DEFAULT 0,
+            success_count INTEGER NOT NULL DEFAULT 0,
+            first_seen_at REAL NOT NULL,
+            last_seen_at REAL NOT NULL,
+            sample_run_id TEXT NOT NULL DEFAULT ''
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_wf_pattern_hits"
+                  " ON workflow_patterns(hit_count DESC, last_seen_at DESC)")
+        c.commit()
+
+    def _mig_0024_caller_call_id(self) -> None:
+        """Sub-agent runs remember which parent tool call dispatched them.
+
+        Without it, five sub-agents come back with five results and there is no
+        way to say which result belongs to which dispatch — audit, timeout
+        attribution and error reporting all dead-end there.
+
+        Empty string (not NULL) for legacy rows: every read does
+        ``row.get("caller_call_id") or ""``, and an empty default keeps that
+        branch identical whether the column predates or postdates this step.
+
+        Self-healing first: a database can carry 0001 in its ledger WITHOUT
+        owning ``subagent_runs`` — that is precisely the mistake 0002 exists to
+        document. On such a database a bare ALTER or CREATE INDEX raises "no
+        such table", the runner treats it as a failed step, and rolling back
+        takes 0002..0023 down with it. So borrow 0001's (idempotent) DDL
+        instead of re-deriving the table here; a second copy of the schema is a
+        second copy that will drift.
+        """
+        self._mig_0001_subagent_runs()
+        self._safe_add_column(
+            "sessions", "subagent_runs", "caller_call_id", "TEXT DEFAULT ''")
+        s = self._dbs["sessions"]
+        # Reading the ledger by parent call is the whole point of the column.
+        s.execute("CREATE INDEX IF NOT EXISTS idx_subrun_caller"
+                  " ON subagent_runs(caller_call_id)")
+        s.commit()
+
     def _mig_0008_cron_lease_and_team(self) -> None:
         """§14 后台任务账本语义 + §13 TaskLease（Phase 7/10）。
 
@@ -2200,7 +2319,7 @@ class Storage:
             return
         cols = ("parent_session_id", "child_session_id", "subagent_type", "label",
                 "status", "created_at", "started_at", "finished_at",
-                "result_chars", "error")
+                "result_chars", "error", "caller_call_id")
         data = {k: v for k, v in fields.items() if k in cols}
         c = self._db("sessions")
         # INSERT-or-UPDATE in one statement so two rapid transitions can't race

@@ -274,7 +274,7 @@ def test_dag_lease_blocks_duplicate_task_id(tmp_path, monkeypatch):
         monkeypatch.setattr(storage_mod, "get_storage", lambda: st)
 
         class _Stub:
-            async def spawn_batch(self, specs, ctx):
+            async def spawn_batch(self, specs, ctx, caller_call_id=""):
                 return [{"ok": True, "type": s.get("subagent_type") or "x",
                          "label": s.get("label") or "", "text": "done",
                          "error": "", "subagent_id": "sid"} for s in specs]
