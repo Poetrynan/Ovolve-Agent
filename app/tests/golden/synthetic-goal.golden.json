@@ -1,0 +1,76 @@
+{
+ "session_id": "synthetic-goal",
+ "recorded_at": 1787462466.6603303,
+ "synthetic": true,
+ "scenario": "goal",
+ "events": [
+  {
+   "seq": 1,
+   "event_type": "session.created",
+   "payload": {
+    "title": "合成目标流"
+   },
+   "timestamp": 1787462466649,
+   "chain_hash": "f1f260461ac9580430d7de95845ec4a452feaca06a1528f52bd1ec677847850a"
+  },
+  {
+   "seq": 2,
+   "event_type": "agent.turn_started",
+   "payload": {
+    "turn": 1
+   },
+   "timestamp": 1787462466651,
+   "chain_hash": "65bf930ac37119f76b9ea3debc6f59312e8e113e1eb0a3e4982edc1b873a8752"
+  },
+  {
+   "seq": 3,
+   "event_type": "tool.execution_started",
+   "payload": {
+    "tool": "run_shell",
+    "args": {
+     "cmd": "pytest -q"
+    }
+   },
+   "timestamp": 1787462466652,
+   "chain_hash": "32507984af15b064caab5372654637b6301f8cd7e1c2aec42e0664cd745326fe"
+  },
+  {
+   "seq": 4,
+   "event_type": "tool.execution_completed",
+   "payload": {
+    "tool": "run_shell",
+    "ok": true
+   },
+   "timestamp": 1787462466652,
+   "chain_hash": "5bdacc74e9cf860679a180b28b5f45cb47ce2fe55075aff5780d8ad7882696f7"
+  },
+  {
+   "seq": 5,
+   "event_type": "agent.turn_completed",
+   "payload": {
+    "ok": true
+   },
+   "timestamp": 1787462466653,
+   "chain_hash": "a885869aa3fbc0803d2a65c773018a7d3b074190add39833d67c59587133ba46"
+  },
+  {
+   "seq": 6,
+   "event_type": "system.checkpoint_created",
+   "payload": {
+    "turn_state": "completed",
+    "scope": "synthetic"
+   },
+   "timestamp": 1787462466655,
+   "chain_hash": "17b05775b67c7df962e31036b94d936275294b8bb9a5e88a611143305528bf0a"
+  },
+  {
+   "seq": 7,
+   "event_type": "system.recovery_initiated",
+   "payload": {
+    "reason": "synthetic drill"
+   },
+   "timestamp": 1787462466656,
+   "chain_hash": "dd5a14ca6f51540313b9a9bbcd8d07e75cda8f765f2ebc158c73167a3692ff2a"
+  }
+ ]
+}

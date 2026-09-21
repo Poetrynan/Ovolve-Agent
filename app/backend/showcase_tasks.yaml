@@ -1,0 +1,54 @@
+# Ovolve MVP — Showcase 任务包
+# 预置 2–3 个能触发 5-Agent fan-out 的真实任务
+# 每个任务会触发 planner -> coder -> reviewer -> validator -> diagnostician 并行流水线
+
+tasks:
+  - id: add-feature-and-test
+    name: "添加功能并测试"
+    description: "给示例项目加一个功能，然后审查、验证、测试"
+    prompt: |
+      给 src/example.py 添加一个日志记录功能：
+      1. 在函数入口和出口打印 INFO 级别日志
+      2. 异常时打印 ERROR 级别日志并附带堆栈
+      3. 使用 Python 标准库 logging，不引入第三方依赖
+      
+      完成后自动审查代码质量、验证测试通过、诊断环境依赖。
+    expected_agents:
+      - planner
+      - coder
+      - reviewer
+      - validator
+      - diagnostician
+
+  - id: refactor-and-review
+    name: "重构并审查"
+    description: "重构一个模块，然后做代码审查和安全性检查"
+    prompt: |
+      重构 src/utils.py：
+      1. 消除重复代码，提取公共函数
+      2. 添加类型注解
+      3. 改进命名规范
+      
+      完成后自动审查代码风格、验证功能完整性、诊断潜在问题。
+    expected_agents:
+      - planner
+      - coder
+      - reviewer
+      - validator
+
+  - id: debug-and-fix
+    name: "调试并修复"
+    description: "诊断一个 bug，修复它，然后验证修复"
+    prompt: |
+      诊断并修复 src/calculator.py 中的 bug：
+      1. 先运行测试找出失败用例
+      2. 分析根因
+      3. 实施修复
+      4. 验证所有测试通过
+      
+      完成后自动审查修复质量、验证回归测试。
+    expected_agents:
+      - diagnostician
+      - coder
+      - reviewer
+      - validator

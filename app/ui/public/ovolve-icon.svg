@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="ovolve-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0052ff"/>
+      <stop offset="33%" stop-color="#00d2ff"/>
+      <stop offset="66%" stop-color="#9b51e0"/>
+      <stop offset="100%" stop-color="#ff5e7e"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#ovolve-grad)"/>
+  <circle cx="32" cy="32" r="14" fill="none" stroke="white" stroke-width="3" stroke-dasharray="6 4"/>
+  <circle cx="32" cy="18" r="4" fill="white"/>
+  <circle cx="18" cy="40" r="4" fill="white" opacity="0.8"/>
+  <circle cx="46" cy="40" r="4" fill="white" opacity="0.8"/>
+</svg>

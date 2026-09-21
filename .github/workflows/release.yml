@@ -1,0 +1,107 @@
+name: Release Windows Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach (e.g. v0.0.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build & publish Windows NSIS
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Resolve tag
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch offline embedder model
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip huggingface_hub
+          # Inline download so older tags still build even if the repo script had
+          # Windows console encoding issues (e.g. non-ASCII arrows in prints).
+          python - <<'PY'
+          from pathlib import Path
+          from huggingface_hub import snapshot_download
+
+          dest = Path("app/resources/embedder")
+          dest.mkdir(parents=True, exist_ok=True)
+          print(f"Downloading Xenova/bge-base-zh-v1.5 -> {dest}")
+          snapshot_download(repo_id="Xenova/bge-base-zh-v1.5", local_dir=str(dest))
+          onnx = dest / "onnx" / "model.onnx"
+          if not onnx.is_file():
+              raise SystemExit(f"ERROR: expected {onnx} after download")
+          print(f"OK: {onnx} ({onnx.stat().st_size / (1024 * 1024):.1f} MB)")
+          PY
+
+      - name: Install UI dependencies
+        working-directory: app/ui
+        run: |
+          npm ci
+          # node-pty@1.0.0 fails on newer MSVC (C2362 goto/cleanup). Pin a fixed release
+          # so tag rebuilds that still declare ^1.0.0 still package successfully.
+          npm install node-pty@1.1.0 --no-save
+
+      - name: Build installer (electron-builder)
+        working-directory: app/ui
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist
+
+      - name: List release artifacts
+        shell: bash
+        run: ls -lah app/ui/release || true
+
+      - name: Attach artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Ovolve Agent ${{ steps.meta.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            app/ui/release/*.exe
+            app/ui/release/*.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

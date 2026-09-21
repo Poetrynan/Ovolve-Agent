@@ -1,0 +1,69 @@
+{
+ "session_id": "synthetic-skill",
+ "recorded_at": 1787462466.6849911,
+ "synthetic": true,
+ "scenario": "skill",
+ "events": [
+  {
+   "seq": 1,
+   "event_type": "skill.started",
+   "payload": {
+    "skill_id": "demo-skill",
+    "selection_reason": "trigger_match(score=3)"
+   },
+   "timestamp": 1787462466678,
+   "chain_hash": "b2ab587fc7e99341b4a3318192216bacbe39a8a8dc89ba40b9d24ef74506641f"
+  },
+  {
+   "seq": 2,
+   "event_type": "tool.execution_started",
+   "payload": {
+    "tool": "read_file",
+    "args": {}
+   },
+   "timestamp": 1787462466679,
+   "chain_hash": "fdfd2cc326a9ed8b836c7d8548402c6db6065735087f23074d6c0a4397343c9a"
+  },
+  {
+   "seq": 3,
+   "event_type": "tool.execution_completed",
+   "payload": {
+    "tool": "read_file",
+    "ok": true
+   },
+   "timestamp": 1787462466679,
+   "chain_hash": "c3342500d8afbaa96d55790fa46b189ca7dcc903687a054d84705c2c3323e6a3"
+  },
+  {
+   "seq": 4,
+   "event_type": "skill.completed",
+   "payload": {
+    "skill_id": "demo-skill"
+   },
+   "timestamp": 1787462466680,
+   "chain_hash": "52af4e34566691b97ec0894e1bb3606e6fec5500f34c3f9e3def3d8bffb1b96b"
+  },
+  {
+   "seq": 5,
+   "event_type": "skill.experience_recorded",
+   "payload": {
+    "experience_id": "exp-synth-1",
+    "outcome": "success"
+   },
+   "timestamp": 1787462466680,
+   "chain_hash": "6ede579175002eb390461a762c3f389ae937173d16ea80e90480cfc24ac28ddb"
+  },
+  {
+   "seq": 6,
+   "event_type": "memory.extracted",
+   "payload": {
+    "facts": [
+     "演示用事实一条"
+    ],
+    "count": 1
+   },
+   "timestamp": 1787462466681,
+   "chain_hash": "fca6a0255cbcef7d8b331bda729851a5e2b4771f1e2a142989b05d1a3b1fcc28"
+  }
+ ]
+}

@@ -1,0 +1,58 @@
+{
+ "session_id": "synthetic-demo",
+ "recorded_at": 1787462466.7123032,
+ "synthetic": true,
+ "scenario": "chat",
+ "events": [
+  {
+   "seq": 1,
+   "event_type": "session.created",
+   "payload": {
+    "title": "合成基线演示"
+   },
+   "timestamp": 1787462466705,
+   "chain_hash": "11050835c2ba432059fa1737952bab97357c8360c322024304a3a5af1e9d507d"
+  },
+  {
+   "seq": 2,
+   "event_type": "user.message_submitted",
+   "payload": {
+    "text": "把 README 标题改成 Ovolve"
+   },
+   "timestamp": 1787462466706,
+   "chain_hash": "d7b1d58957217a96dca8e6398feee24c64b91149e8f87eebe09acaa027185dd7"
+  },
+  {
+   "seq": 3,
+   "event_type": "tool.execution_started",
+   "payload": {
+    "tool": "write_file",
+    "args": {
+     "path": "README.md"
+    }
+   },
+   "timestamp": 1787462466706,
+   "chain_hash": "d04dc4a3d03193a3b0b677be47eb54c429870f3aee8f10cc7338a3ed85f6e01c"
+  },
+  {
+   "seq": 4,
+   "event_type": "tool.execution_completed",
+   "payload": {
+    "tool": "write_file",
+    "ok": true,
+    "chars": 128
+   },
+   "timestamp": 1787462466707,
+   "chain_hash": "d32d2e933c5ecc6a8a4e3703e0e710b8307bd0a831ac2b16f0552034da9e3ea4"
+  },
+  {
+   "seq": 5,
+   "event_type": "agent.turn_completed",
+   "payload": {
+    "ok": true
+   },
+   "timestamp": 1787462466708,
+   "chain_hash": "9ce58ecbf812d750a90bbaef8c8eaed1121eadfdce1b9f6250377afed6bf8de3"
+  }
+ ]
+}

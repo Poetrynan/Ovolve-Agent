@@ -1,0 +1,67 @@
+# ==============================================================================
+# Ovolve Agent — Production .gitignore
+# ==============================================================================
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts & outputs
+dist/
+dist-*/
+dist_wheels/
+dist_py/
+target/
+crates/**/target/
+release/
+app/ui/release/
+*.exe
+
+# Bundled embedder weights (download via scripts/fetch_embedder_model.py)
+app/resources/embedder/**
+!app/resources/embedder/README.md
+!app/resources/embedder/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+app/.pytest_cache/
+
+# Environment, secrets & local configs
+.env
+.env.*
+*.local.json
+app/config.local.json
+config.local.json
+# 运行期生成的真实配置：只提交 app/config.example.json，
+# 这个文件里带 model.api_key，入库等于把钥匙孔留在门上。
+app/config.json
+app/.api_token
+app/.backend_port
+app/.dev_ports.json
+app/.dev_ports.*.json
+app/temp/
+temp/
+app/output/
+app/backend/tests/.tmp/
+
+# Logs & temporary files
+logs/
+*.log
+**/*.log
+.tmp/
+.tmp-*/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+
+# Local workspace storage
+/_local/
+.ovolve/
+scratch/
