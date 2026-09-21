@@ -19,6 +19,14 @@ export interface Plugin {
   description: string
   author: string
   homepage: string
+  /** Licence declared by the manifest, or read from a bundled licence file. */
+  license: string
+  /** The `Copyright (c) ...` line found in the plugin directory, if any. */
+  copyright: string
+  /** Upstream repository; falls back to `homepage` when none is declared. */
+  upstream: string
+  /** True when `license` came from a bundled file rather than the manifest. */
+  licenseFromFile: boolean
   /** loaded → contributions are live; disabled → user turned it off;
    *  broken → nothing it declared could be applied (see `error`). */
   status: 'loaded' | 'disabled' | 'broken'
@@ -65,6 +73,10 @@ export const usePluginStore = create<PluginState>((set, get) => ({
         description: String(p?.description ?? ''),
         author: String(p?.author ?? ''),
         homepage: String(p?.homepage ?? ''),
+        license: String(p?.license ?? ''),
+        copyright: String(p?.copyright ?? ''),
+        upstream: String(p?.upstream ?? ''),
+        licenseFromFile: Boolean(p?.licenseFromFile),
         status: (p?.status ?? 'loaded') as Plugin['status'],
         error: String(p?.error ?? ''),
         skills: Array.isArray(p?.skills) ? p.skills : [],

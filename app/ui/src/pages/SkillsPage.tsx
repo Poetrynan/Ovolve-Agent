@@ -43,6 +43,7 @@ import {
   DialogFooter,
 } from '@components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { LicenseAttributionBlock } from '@components/capabilities/LicenseAttributionBlock'
 import { readGate } from '@/lib/gateReport'
 import { API_BASE, apiFetch } from '@lib/api'
 
@@ -1100,66 +1101,17 @@ export default function SkillsPage({
             </div>
 
             {/* 来源与许可 —— 装之前让用户看清这东西是谁写的、什么许可证、钉在哪个 commit */}
-            {(selectedSkill?.source || selectedSkill?.license) && (
-              <div className="space-y-1.5">
-                <h5 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                  来源与许可
-                </h5>
-                <div className="bg-muted/30 p-3 rounded-xl border border-border/40 space-y-2">
-                  {selectedSkill?.source ? (
-                    <div className="flex items-start gap-2">
-                      <span className="w-16 shrink-0 text-muted-foreground">上游仓库</span>
-                      <a
-                        href={sourceUrl(selectedSkill)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-mono text-foreground hover:underline break-all inline-flex items-center gap-1"
-                      >
-                        {selectedSkill.source}
-                        {selectedSkill.skillPath ? (
-                          <span className="text-muted-foreground">/{selectedSkill.skillPath}</span>
-                        ) : null}
-                        <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
-                      </a>
-                    </div>
-                  ) : null}
-                  {selectedSkill?.license ? (
-                    <div className="flex items-start gap-2">
-                      <span className="w-16 shrink-0 text-muted-foreground">许可证</span>
-                      {selectedSkill.licenseSource ? (
-                        <a
-                          href={selectedSkill.licenseSource}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-foreground hover:underline inline-flex items-center gap-1"
-                        >
-                          {selectedSkill.license}
-                          <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
-                        </a>
-                      ) : (
-                        <span className="text-foreground">{selectedSkill.license}</span>
-                      )}
-                    </div>
-                  ) : null}
-                  {selectedSkill?.commitSha ? (
-                    <div className="flex items-start gap-2">
-                      <span className="w-16 shrink-0 text-muted-foreground">钉住版本</span>
-                      <span className="font-mono text-foreground break-all" title="上游再改动也不会自动生效">
-                        {selectedSkill.commitSha}
-                      </span>
-                    </div>
-                  ) : null}
-                  {selectedSkill?.archived ? (
-                    <div className="flex items-start gap-2 pt-1 border-t border-border/30">
-                      <Archive className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                      <span className="text-amber-600 dark:text-amber-400 leading-relaxed">
-                        上游仓库已归档：代码仍然可用，但已经没有人在维护它，出问题不会有人修。
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
+            <LicenseAttributionBlock
+              license={selectedSkill?.license}
+              licenseSource={selectedSkill?.licenseSource}
+              author={selectedSkill?.author}
+              copyright={selectedSkill?.copyright}
+              upstream={selectedSkill?.source || selectedSkill?.upstream}
+              upstreamHref={selectedSkill?.source ? sourceUrl(selectedSkill) : selectedSkill?.upstream}
+              commitSha={selectedSkill?.commitSha}
+              archived={selectedSkill?.archived}
+              licenseFromFile={selectedSkill?.licenseFromFile}
+            />
 
             {/* Triggers */}
             {selectedSkill?.triggers && selectedSkill.triggers.length > 0 && (

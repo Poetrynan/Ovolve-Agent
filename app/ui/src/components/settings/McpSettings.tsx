@@ -22,6 +22,7 @@ import {
 } from '@components/ui/dialog'
 import { API_BASE, apiFetch } from '@lib/api'
 import { cn } from '@/lib/utils'
+import { LicenseAttributionBlock } from '@components/capabilities/LicenseAttributionBlock'
 
 interface McpTool { name: string; raw: string; desc: string }
 /** 登录凭据摘要——服务端只回"是否已配置/保护形态"，secret 原文永不出后端。 */
@@ -49,6 +50,12 @@ interface McpServer {
   /** 不对 AI 开放的工具数量（旧后端无此字段 → undefined） */
   hiddenToolCount?: number
   auth?: McpAuthSummary
+  /** Origin, merged in from the install record. Absent for hand-added servers. */
+  license?: string
+  licenseSource?: string
+  source?: string
+  commitSha?: string
+  archived?: boolean
 }
 interface McpState {
   available: boolean
@@ -419,6 +426,16 @@ function ServerCard({
             {server.error}
           </div>
         )}
+
+        {/* Where this connector came from. Renders nothing for a server added by
+            hand, which has no recorded origin — a blank is honest, a guess is not. */}
+        <LicenseAttributionBlock
+          license={server.license}
+          licenseSource={server.licenseSource}
+          upstream={server.source}
+          commitSha={server.commitSha}
+          archived={server.archived}
+        />
       </div>
 
       {/* Footer: Tools info & expander */}

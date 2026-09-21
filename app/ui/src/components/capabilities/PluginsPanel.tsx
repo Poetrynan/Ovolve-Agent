@@ -30,6 +30,7 @@ import {
   DialogFooter,
 } from '@components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { LicenseAttributionBlock } from './LicenseAttributionBlock'
 
 function PluginCard({
   plugin,
@@ -424,6 +425,16 @@ export function PluginsPanel({ installTrigger = 0 }: { installTrigger?: number }
                     </div>
                   )}
                 </div>
+
+                {/* Where this plugin came from. Renders nothing when the plugin
+                    declares no licence and ships no licence file. */}
+                <LicenseAttributionBlock
+                  license={selectedPlugin.license}
+                  author={selectedPlugin.author}
+                  copyright={selectedPlugin.copyright}
+                  upstream={selectedPlugin.upstream || selectedPlugin.homepage}
+                  licenseFromFile={selectedPlugin.licenseFromFile}
+                />
 
                 {/* Skills section */}
                 <div className="space-y-1.5">
