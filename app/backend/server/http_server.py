@@ -6252,10 +6252,25 @@ async def handle_mcp_list(request):
     """List configured MCP servers with live connection status + tool counts."""
     from mcp_manager import get_mcp_manager
     mgr = get_mcp_manager()
+    servers = mgr.list_servers()
+    # Origin is kept beside config.json rather than inside it, so merge it back
+    # in here. A connector installed by hand simply has no record and stays as
+    # it was — the UI shows nothing rather than inventing a source.
+    try:
+        from skill_registry import load_mcp_provenance
+        provenance = load_mcp_provenance()
+    except Exception:
+        provenance = {}
+    for snap in servers:
+        if not isinstance(snap, dict):
+            continue
+        extra = provenance.get(str(snap.get("name") or ""))
+        if isinstance(extra, dict):
+            snap.update(extra)
     return web.json_response({
         "available": mgr.available,
         "importError": mgr.import_error,
-        "servers": mgr.list_servers(),
+        "servers": servers,
     })
 
 

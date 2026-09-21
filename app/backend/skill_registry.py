@@ -37,6 +37,59 @@ def _skills_dest() -> Path:
     return dest
 
 
+def _mcp_provenance_path() -> Path:
+    """Where an installed MCP connector's origin is remembered.
+
+    Deliberately NOT a key inside config.json: everything under ``mcpServers``
+    is handed to the MCP client as-is, and mixing our own bookkeeping into that
+    object means shipping extra fields over someone else's protocol.
+    """
+    root = _repo_root() / ".agents"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "mcp-provenance.json"
+
+
+def load_mcp_provenance() -> dict:
+    """Read the origin record. A missing or unreadable file reads as empty."""
+    path = _mcp_provenance_path()
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            data = json.load(fp)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def record_mcp_provenance(server_name: str, entry: dict) -> None:
+    """Remember where an installed MCP connector came from.
+
+    Best-effort by design: the connector is already configured and usable at
+    this point, so failing to write a note about it must not fail the install.
+    """
+    if not server_name:
+        return
+    meta = with_provenance(entry)
+    record: dict = {}
+    for key in ("license", "licenseSource", "source", "commitSha", "archived"):
+        value = meta.get(key)
+        # "UNKNOWN" 是"查不到来源"的哨兵值，不是一条许可事实；False 也是默认值。
+        # 把它们写进记录，等于把"不知道"记成了一条结论。
+        if value in (None, "", False) or value == "UNKNOWN":
+            continue
+        record[key] = value
+    if not record:
+        return
+    data = load_mcp_provenance()
+    data[server_name] = record
+    try:
+        with open(_mcp_provenance_path(), "w", encoding="utf-8") as fp:
+            json.dump(data, fp, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+
 def load_lockfile(path: Optional[str] = None) -> dict:
     path = path or str(_repo_root() / "skills-lock.json")
     if not os.path.isfile(path):
@@ -586,6 +639,10 @@ def install_marketplace_skill(
                 json.dump(cfg, fp, indent=2, ensure_ascii=False)
         except Exception as e:
             return Result.failure(f"Failed to persist config.json: {e}")
+
+        # 归属另存旁挂文件：config.json 里的 mcpServers 是原样交给 MCP 客户端的，
+        # 不能往里塞我们自己的记账字段。
+        record_mcp_provenance(server_name, entry)
 
         try:
             from mcp_manager import get_mcp_manager, MCPServerConfig, MCPServerConnection
