@@ -98,6 +98,11 @@ class MemoryType:
     PROCEDURE = "procedure"
     DREAM = "dream"
     SESSION = "session"
+    #: 踩过的坑："`--basetemp` 复用同一目录会成片 ERROR"、"`os.symlink()` 在本机
+    #: 不抛异常但什么都不创建"。这类知识只有吃过亏的人写得出，而且**召回它的
+    #: 收益不对称**：漏掉它 = 再踩一次；多召回它 = 多读一句话。所以它单独成一
+    #: 类，并在 _rerank 里拿到加权（见 _TYPE_RECALL_WEIGHT）。
+    GOTCHA = "gotcha"
 
 
 class MemoryScope:
@@ -152,6 +157,9 @@ class Memory:
         self.status: str = ""
         #: 0016：如果这一条被批准，这几条会被归档。非空 = 它是一份合并提案。
         self.supersedes: List[str] = []
+        #: 失效时刻（epoch 秒），0 = 不失效。负面断言由写入闸门自动填——
+        #: 一条"某物不存在"只在观测那一刻成立，过了保质期读路径就不再召回它。
+        self.valid_until: float = 0.0
 
 
 
@@ -358,6 +366,45 @@ class DreamConsolidator:
 # ---------------------------------------------------------------------------
 # MemoryLayer -- main facade
 # ---------------------------------------------------------------------------
+
+#: 抽取行可能带的类型前缀。识别不出来的一律按 context 处理——多存一条上下文
+#: 无害，把它误认成 gotcha 才会污染那个高权重通道。
+_EXTRACTED_KINDS: tuple = ("fact", "preference", "context", "procedure", "gotcha")
+
+#: 坑类提案在审批队列里的说明。跟通用文案分开，是因为审批人看"项目常识"
+#: 会当成一条可有可无的补充，而坑一旦漏掉就要再踩一次。
+GOTCHA_RATIONALE: str = ("从编辑历史里识别出的**坑**：照着直觉写会出错 · "
+                         "采纳后将写入项目规范，避免下次重复踩")
+
+#: 打了这个 tag 的记忆是"断言某物不存在"的观察，带保质期。读侧据此加年龄提示。
+NEGATIVE_TAG: str = "negative-assertion"
+
+
+def _row_is_perishable(row: dict) -> bool:
+    """这条记忆是不是"会过期"的（带保质期，或打了负面断言标记）。"""
+    if not isinstance(row, dict):
+        return False
+    try:
+        if float(row.get("valid_until") or 0) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    tags = row.get("tags")
+    if isinstance(tags, str):
+        try:
+            tags = json.loads(tags)
+        except Exception:
+            tags = [tags]
+    return isinstance(tags, (list, tuple)) and NEGATIVE_TAG in tags
+
+
+def _kind_of_extracted_line(line: str) -> str:
+    """从 `[gotcha] ...` 这类前缀里读出类型；没有前缀就是 context。"""
+    m = re.match(r"^\[([a-z]+)\]\s*", str(line or "").strip(), flags=re.IGNORECASE)
+    if m and m.group(1).lower() in _EXTRACTED_KINDS:
+        return m.group(1).lower()
+    return "context"
+
 
 class MemoryLayer:
     """Memory management: extract, dream, recall, prefetch, synthesize.
@@ -1052,12 +1099,17 @@ class MemoryLayer:
                 "Path requirement: NEVER use local absolute paths like C:\\Users\\... — ALWAYS use relative workspace paths (e.g. `output/`).\n"
                 "Return ONLY a JSON object, no prose, no code fences:\n"
                 '{"facts": ["..."], "preferences": ["..."], '
-                '"context": ["..."], "procedures": ["..."]}\n'
+                '"context": ["..."], "procedures": ["..."], "gotchas": ["..."]}\n'
                 "Rules:\n"
                 "- Skip boilerplate (imports, license headers, trivial file I/O).\n"
                 "- Skip anything that looks like a secret or API key.\n"
                 "- Each item must be a single, clear, human-readable sentence in Chinese.\n"
-                "- Empty arrays are fine — don't invent memories."
+                "- Empty arrays are fine — don't invent memories.\n"
+                "- `gotchas` are traps that cost real time: a command that looks\n"
+                "  right and fails silently, an API that returns something other\n"
+                "  than its name implies, a workaround that exists for a reason\n"
+                "  nobody wrote down. Write them as 'do X, not Y, because Z'.\n"
+                "  A gotcha is NOT a missing feature and NOT a TODO."
             ),
             "file": os.path.basename(file_path),
             "content": content,
@@ -1081,6 +1133,7 @@ class MemoryLayer:
             ("preferences", MemoryType.PREFERENCE),
             ("context", MemoryType.CONTEXT),
             ("procedures", MemoryType.PROCEDURE),
+            ("gotchas", MemoryType.GOTCHA),
         ]
         for key, mem_type in type_map:
             for item in result.get(key, []):
@@ -1195,13 +1248,19 @@ class MemoryLayer:
         for line in lines[:self.MAX_CONTEXT_PROPOSALS]:
             if engine.store.count_open() >= policy.max_open:
                 break
-            sig = signature_for("extracted_context", "", line)
+            # 签名必须带 kind。共用 "extracted_context" 一个命名空间时，
+            # `[gotcha] X` 与 `[fact] X` 的正文相同就会被判为同一条已提过的
+            # 提案——坑和事实正好是两种都要留的东西，去重掉一条等于丢一条。
+            kind = _kind_of_extracted_line(line)
+            # 提案的 kind 跟着走，审批队列里才能一眼分清"这条是坑"。
+            sig = signature_for(f"extracted_{kind}", "", line)
             if engine.store.has_open_for_signature(sig):
                 continue
             last_rej = engine.store.last_rejected_at(sig)
             if last_rej and (time.time() - last_rej) < policy.reject_cooldown_s:
                 continue
-            clean_line = re.sub(r"^\[(?:fact|preference|context|procedure)\]\s*", "", line, flags=re.IGNORECASE).strip()
+            clean_line = re.sub(r"^\[(?:fact|preference|context|procedure|gotcha)\]\s*",
+                                "", line, flags=re.IGNORECASE).strip()
             # 路径相对化与清洗
             clean_line = re.sub(r'[A-Za-z]:\\[^\\s\']+[\\/]([A-Za-z0-9_\-]+)[\\/]?', r'\1/', clean_line)
             clean_line = re.sub(r'\/[^\s\']+\/([A-Za-z0-9_\-]+)\/?', r'\1/', clean_line)
@@ -1209,11 +1268,12 @@ class MemoryLayer:
             engine.store.insert_proposal(Proposal(
                 id=uuid.uuid4().hex[:12],
                 signature=sig,
-                kind="extracted_context",
+                kind=f"extracted_{kind}",
                 tool_name="",
                 target_file="AGENTS.md",
                 draft=clean_draft,
-                rationale="从您最近编辑的文件中提炼的项目常识 · 采纳后将写入项目规范并持续生效",
+                rationale=(GOTCHA_RATIONALE if kind == "gotcha"
+                           else "从您最近编辑的文件中提炼的项目常识 · 采纳后将写入项目规范并持续生效"),
                 hits=1,
                 status="pending",
                 created_at=time.time(),
@@ -1918,11 +1978,38 @@ class MemoryLayer:
             results = self._rerank(results, query_vec, limit)
             self.note_recall(results)
             mems = [Memory.from_dict(m) for m in results]
+            self._annotate_perishable(mems, results)
             self.telemetry.end_span(span, found=len(mems))
             return mems
         except Exception as e:
             self.telemetry.end_span(span, error=str(e))
             return []
+
+    @staticmethod
+    def _annotate_perishable(mems: List["Memory"], rows: List[dict]) -> None:
+        """给带保质期的记忆补一句年龄提示（负面断言就是其中一种）。
+
+        过了 ``valid_until`` 的行读路径已经不返回了，这里管的是**还在保质期内
+        但已经不新鲜**的那一段：一句"观测于 9 天前"比让模型当成刚看过的事实
+        强，也比直接删掉有用——它可以自己去核实。
+
+        只改这一次返回的 Memory 副本，不改库里的正文。
+        """
+        if not mems:
+            return
+        try:
+            from memory_guard import staleness_note
+        except Exception:
+            return
+        now = time.time()
+        for mem, row in zip(mems, rows):
+            if not _row_is_perishable(row):
+                continue
+            observed = (float(row.get("updated_at") or 0)
+                        or float(row.get("created_at") or 0))
+            note = staleness_note(observed, now=now)
+            if note and note not in mem.content:
+                mem.content = f"{mem.content} {note}"
 
     def _extract_keywords(self, text: str) -> List[str]:
         """Extract meaningful keywords from text for search.
@@ -2005,6 +2092,21 @@ class MemoryLayer:
             return 0.0
         return dot / (na * nb)
 
+    #: 召回侧的类型加权。默认 1.0 = 不干预，只有 gotcha 抬起来。
+    _TYPE_RECALL_WEIGHT: dict = {
+        MemoryType.GOTCHA: 1.35,
+    }
+
+    def _type_weight(self, row: dict) -> float:
+        """坑类记忆在召回时加权。
+
+        漏召回一条坑的代价（再踩一次，可能半天）和误召回一条坑的代价（多读
+        一句话）严重不对称，所以给它一个乘数而不是加一个常数——加常数会在
+        relevance 很低时把完全不相关的坑硬顶上来，乘数只在它本来就相关时生效。
+        其余类型一律 1.0：给"事实"也加权等于没加权，只是把整体抬高一截。
+        """
+        return float(self._TYPE_RECALL_WEIGHT.get(row.get("type") or "", 1.0))
+
     def _rerank(
         self,
         rows: List[dict],
@@ -2052,7 +2154,8 @@ class MemoryLayer:
             importance = float(row.get("importance") or 0.5)
             confidence = self._confidence_of(row)
             base = (relevance * (0.5 + importance) * confidence
-                    * self._decay_weight(row))
+                    * self._decay_weight(row)
+                    * self._type_weight(row))
             scored.append({"row": row, "vec": vec, "relevance": relevance, "score": base})
 
 
@@ -2289,7 +2392,7 @@ class MemoryLayer:
             #
             # trusted 由 created_by 推导，而不是另开一个参数：两个来源会互相矛盾，
             # 而"谁写的"本来就是决定严格程度的那个事实。
-            from memory_guard import screen_memory_content
+            from memory_guard import NEGATIVE_TTL_DAYS, screen_memory_content
             _v = screen_memory_content(
                 memory.content, trusted=(memory.created_by == "user"))
             if not _v.allowed:
@@ -2299,6 +2402,13 @@ class MemoryLayer:
                                       + "; ".join(_v.reasons))
             memory.content = _v.content
             memory.sensitivity = _v.sensitivity
+            if _v.negative_assertion:
+                # 保质期只在这里设一次，且调用方显式设过就尊重它——有些观察
+                # 的有效期比默认短（"这个端口现在没人占"以分钟计）。
+                if not memory.valid_until:
+                    memory.valid_until = time.time() + (
+                        NEGATIVE_TTL_DAYS * 86400)
+                memory.add_tag(NEGATIVE_TAG)
 
             root = memory.root_dir or self._root_dir
 
@@ -2357,6 +2467,7 @@ class MemoryLayer:
                 sensitivity=memory.sensitivity,
                 status=status,
                 supersedes=memory.supersedes or None,
+                valid_until=int(memory.valid_until or 0),
             )
 
 

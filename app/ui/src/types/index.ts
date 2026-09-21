@@ -247,6 +247,8 @@ export interface SubagentInfo {
   pid?: number | null
   logPath?: string | null
   idleSince?: number | null
+  /** Parent tool call that dispatched this run; null when unknown. */
+  callerCallId?: string | null
 }
 
 /**

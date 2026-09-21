@@ -91,7 +91,15 @@ def install_from_lock_entry(name: str, entry: dict, loader) -> Result:
         if dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(src, dest)
-        return loader.import_skill(str(dest), TrustLevel.VERIFIED)
+        result = loader.import_skill(str(dest), TrustLevel.VERIFIED)
+        # 归属 = 来源仓库。它是"卸载时能不能删"和"出错时找谁"的唯一凭据，
+        # 所以必须在安装这一步写下——事后再猜来源等于没有来源。
+        # 作者自己在 SKILL.md 里声明的归属优先，仓库名只作兜底。
+        if result.ok:
+            entry_obj = getattr(loader, "_skills", {}).get(name)
+            if entry_obj is not None and not getattr(entry_obj, "owner_agents", None):
+                entry_obj.owner_agents = [source]
+        return result
 
 
 def install_from_github(source: str, skill_path: str, loader, name: Optional[str] = None) -> Result:

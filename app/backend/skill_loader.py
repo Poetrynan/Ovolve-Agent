@@ -230,6 +230,45 @@ def check_open_standard_compliance(frontmatter: dict) -> dict:
     return {"compliant": not issues, "issues": issues}
 
 
+#: 归属常量。市场装的技能写来源仓库名（如 "github.com/wshobson/agents"），
+#: 内置的写 OWNER_CORE，用户/项目自己写的写 OWNER_USER。
+OWNER_CORE = "ovolve-core"
+OWNER_USER = "user"
+OWNER_UNKNOWN = "unknown"
+
+#: frontmatter 里作者可以自报归属。两个键都读：``owner-agents`` 是复数形式，
+#: ``owner`` 是单数简写（开放技能标准里没有这一项，是这里的扩展）。
+_OWNER_KEYS = ("owner-agents", "owner_agents", "owner")
+
+
+def read_owner_agents(frontmatter: dict) -> list[str]:
+    """读 frontmatter 里的归属声明。读不到返回空列表——空表示"没声明"，
+    由安装侧按来源补；**不猜**，猜出来的归属比没有归属更误导。"""
+    if not isinstance(frontmatter, dict):
+        return []
+    for key in _OWNER_KEYS:
+        raw = frontmatter.get(key)
+        if raw is None:
+            continue
+        values = raw if isinstance(raw, (list, tuple)) else [raw]
+        out = [str(v).strip() for v in values if str(v).strip()]
+        if out:
+            return out
+    return []
+
+
+def _owner_is_local(candidate: dict) -> bool:
+    """这个候选是不是"本地声明的"（用户/项目自己写的，而非市场装的）。
+
+    只用于同分时的 tie-break：本地写的技能能被用户直接改，市场装的改了会被
+    下次更新覆盖，所以同分时先看本地的更符合用户预期。
+    """
+    owners = [str(o).lower() for o in (candidate.get("owner_agents") or [])]
+    if not owners:
+        return False
+    return any(o in (OWNER_CORE, OWNER_USER) for o in owners)
+
+
 class SkillEntry:
     def __init__(self, name: str, path: str, description: str = "",
                  version: str = "", trust: TrustLevel = TrustLevel.UNTRUSTED):
@@ -273,6 +312,13 @@ class SkillEntry:
         self.requires: list[str] = []
         self.license: str = ""
         self.compatibility: str = ""
+        #: 归属：谁声明了这个技能。复数——同一个技能可以被多个 agent/仓库声明
+        #: （市场装了一份，项目里又自己改了一份）。
+        #: 用于"冲突时谁优先""卸载时能不能删""出错时找谁"。
+        #: 🔴 归属只做**兜底 tie-break**，不参与任何显式规则的否决：它排在
+        #: 可见性、信任级、状态、BROKEN/降级这些判定之后（见 recommend 的排序键）。
+        #: 让归属反过来盖掉一条显式规则，等于把"谁写的"变成"谁说了算"。
+        self.owner_agents: list[str] = []
         #: 依赖检查报告。给前端 env.fix 建议用。
         self.requires_report: dict = {}
         #: 开放技能标准合规清单（由 check_open_standard_compliance 填充）。
@@ -363,6 +409,7 @@ class SkillLoader:
         entry.frontmatter = frontmatter
         entry.body = body
         entry.source = skill_dir
+        entry.owner_agents = read_owner_agents(frontmatter)
         # Visibility triple (B3): three orthogonal booleans, all read once here
         # so downstream consumers never re-parse frontmatter. Old
         # `disable-model-invocation` is kept for back-compat; when it's true it
@@ -968,8 +1015,15 @@ class SkillLoader:
                 # "作者说了这个词就用我" 和 "描述碰巧撞上两个词"。
                 "matched_by": "triggers" if trigger_hits else "description",
                 "triggers_hit": trigger_hits,
+                "owner_agents": list(entry.owner_agents or []),
             })
-        return sorted(results, key=lambda x: -x["match_score"])[:5]
+        # 排序键三段：分数 → 归属 → 名字。归属只在**分数打平**时才起作用，
+        # 且方向是"本地声明的优先于市场装的"；名字是最后一道，保证同分同归属
+        # 时顺序稳定（dict 顺序不该成为产品行为）。
+        return sorted(
+            results,
+            key=lambda x: (-x["match_score"], 0 if _owner_is_local(x) else 1, x["name"]),
+        )[:5]
 
 
     def discover(self, roots: list[str] = None, trust: TrustLevel = TrustLevel.OWN) -> dict:
@@ -1011,6 +1065,12 @@ class SkillLoader:
                     continue  # earlier root already provided this name
                 result = self.import_skill(skill_dir, trust)
                 if result.ok:
+                    # 磁盘上的技能没声明归属就按"用户自己的"记——它确实躺在
+                    # 用户的项目或家目录里。市场装的走 skill_registry，那里
+                    # 会把来源仓库名填进来。
+                    ent = self._skills.get(entry)
+                    if ent is not None and not ent.owner_agents:
+                        ent.owner_agents = [OWNER_USER]
                     loaded.append(entry)
                 else:
                     failed.append({"name": entry, "error": result.error})
