@@ -1,0 +1,10 @@
+allowBuilds:
+  electron-winstaller: set this to true or false
+  esbuild: set this to true or false
+  node-pty: set this to true or false
+# pnpm 11 把构建脚本审批等设置从 package.json 的 pnpm 字段挪到了这里。
+# esbuild / electron-winstaller 的安装后脚本需要显式放行，否则 pnpm install 以
+# ERR_PNPM_IGNORED_BUILDS 退出（交互式 approve-builds 在 CI 里不可用）。
+onlyBuiltDependencies:
+  - esbuild
+  - electron-winstaller

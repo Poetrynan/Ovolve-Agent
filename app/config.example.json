@@ -1,0 +1,99 @@
+{
+  "model": {
+    "provider": "longcat",
+    "model_id": "LongCat-2.0",
+    "api_key": "YOUR_API_KEY_HERE",
+    "base_url": "https://api.longcat.chat/openai/v1",
+    "fallback_model": "",
+    "max_tokens": 8192,
+    "temperature": 0.7,
+    "stream_timeout_s": 120,
+    "context_limit": 1000000
+  },
+  "models": [
+    {
+      "provider": "longcat",
+      "model_id": "LongCat-2.0",
+      "api_key": "YOUR_API_KEY",
+      "base_url": "https://api.longcat.chat/openai/v1",
+      "max_tokens": 8192,
+      "context_limit": 1000000
+    }
+  ],
+  "agent": {
+    "max_steps_per_turn": 0
+  },
+  "compaction": {
+    "max_tokens": 80000,
+    "threshold": 0.80,
+    "emergency_threshold": 0.90,
+    "cooldown_s": 15,
+    "max_consecutive": 5
+  },
+  "permissions": {
+    "mode": "auto",
+    "auto_confirm_low_risk": true,
+    "require_confirmation_for": ["shell_executor", "python_executor", "git_push", "app_install", "app_uninstall", "process_kill"]
+  },
+  "storage": {
+    "db_path": "ovolve.db",
+    "max_history": 1000,
+    "compaction_threshold": 100
+  },
+  "workspace": {
+    "root": ".",
+    "git_trust_enabled": true,
+    "path_whitelist": [],
+    "path_blacklist": ["C:\\Windows\\System32"]
+  },
+  "telemetry": {
+    "enabled": true,
+    "redact_sensitive": true
+  },
+  "security": {
+    "redact_output": true,
+    "redact_mac": true,
+    "path_isolation": true,
+    "anti_scraping": true,
+    "temp_dir": "temp",
+    "output_dir": "output"
+  },
+  "mcp": {
+    "gateway_url": "",
+    "service_id": "",
+    "signature_key": ""
+  },
+  "mcpServers": {
+    "_comment": "External MCP servers. Industry-standard mcpServers schema, so configs are copy-pasteable with mainstream MCP clients. Tools land in the agent pool as mcp__<server>__<tool>. Remove this _comment key and add real entries, e.g.:",
+    "_example_filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:/projects"],
+      "disabled": true
+    }
+  },
+  "bot": {
+    "telegram_token": "",
+    "feishu_app_id": "",
+    "feishu_app_secret": ""
+  },
+  "memory": {
+    "enabled": true,
+    "embedding_model": "text-embedding-3-small",
+    "vector_db_path": "vectors.db",
+    "max_memories": 10000
+  },
+  "shadow": {
+    "mode": "staged",
+    "precheck": true
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "cors_origins": [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:5174",
+      "http://127.0.0.1:5174"
+    ]
+  }
+}

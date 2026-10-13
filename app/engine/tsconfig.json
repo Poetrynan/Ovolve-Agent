@@ -1,0 +1,27 @@
+{
+  // TypeScript target for the migrated orchestration layer.
+  //
+  // RULEBOOK §4: app/backend/<name>.py (TS-routed) -> app/engine/<name>.ts.
+  // The root tsconfig only includes `electron`, so this layer gets its own
+  // project. `tsc` here is the cheap in-loop referee (measured at 20s for the
+  // UI project) once the operator lifts the deny in .claude/settings.json —
+  // until then it is a Step 4 concern.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    // The engine layer has no node_modules of its own; the UI project already
+    // pins @types/node, so borrow its type roots rather than installing a
+    // second copy. RULEBOOK §1: no new dependency without a row naming it.
+    "typeRoots": ["../ui/node_modules/@types"]
+  },
+  "include": ["**/*.ts"]
+}

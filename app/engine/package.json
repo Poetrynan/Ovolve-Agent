@@ -1,0 +1,13 @@
+{
+  "name": "ovolve-engine",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Ovolve agent engine (Python backend -> TypeScript port)",
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "iconv-lite": "^0.7.3",
+    "pyodide": "^314.0.7",
+    "sharp": "^0.35.4"
+  }
+}
