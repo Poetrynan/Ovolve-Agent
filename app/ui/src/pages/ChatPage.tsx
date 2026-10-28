@@ -501,7 +501,7 @@ export default function ChatPage({
 
           {/* Dual-posture Tripartite Capsule (when conversation has messages) */}
           {messages.length > 0 && (
-            <SessionTripartiteCapsule variant="header" className="hidden sm:inline-flex ml-1" />
+            <SessionTripartiteCapsule variant="header" hideBranch className="hidden sm:inline-flex ml-1" />
           )}
 
           {/* Connection status dot */}
@@ -810,31 +810,34 @@ export default function ChatPage({
           className="px-6 pb-4 pt-2 shrink-0 bg-transparent"
         >
           <motion.div layout className="max-w-3xl mx-auto">
-            {messages.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.18 }}
-                className="flex justify-center -mb-[1px] relative z-10"
-              >
-                <SessionTripartiteCapsule variant="hero" />
-              </motion.div>
-            )}
             <GitChangeSummary compact />
             <QueuePanel />
-            <Composer
-              value={draft}
-              onValueChange={setDraft}
-              onSend={handleSend}
-              busy={isWorking}
-              queueDepth={queueItems.length}
-              onStop={stop}
-              canResume={turnStatus === 'paused'}
-              onResume={resumeTurn}
-              slashActions={slashActions}
-              onSlashInsert={handleSlashInsert}
-            />
+            <div
+              className={cn(
+                'transition-colors duration-200',
+                messages.length === 0 &&
+                  'rounded-[22px] bg-muted/40 dark:bg-muted/20 border border-border/50 p-1',
+              )}
+            >
+              <Composer
+                value={draft}
+                onValueChange={setDraft}
+                onSend={handleSend}
+                busy={isWorking}
+                queueDepth={queueItems.length}
+                onStop={stop}
+                canResume={turnStatus === 'paused'}
+                onResume={resumeTurn}
+                slashActions={slashActions}
+                onSlashInsert={handleSlashInsert}
+                scopeSlot={<SessionTripartiteCapsule variant="composer" />}
+              />
+              {messages.length === 0 && (
+                <div className="flex items-center h-9 px-2 pt-0.5">
+                  <SessionTripartiteCapsule variant="hero" hideBranch />
+                </div>
+              )}
+            </div>
           </motion.div>
         </motion.div>
 

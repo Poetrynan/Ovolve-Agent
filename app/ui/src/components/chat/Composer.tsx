@@ -7,7 +7,7 @@
 //   • 📎 attachment button (+ paste / drag-drop)
 //   • @ mention panel  (files / skills / subagents / sessions)
 //   • / slash command palette
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Send, Plus, Paperclip, AtSign, ClipboardPaste, ListPlus, Square, FoldVertical, Zap, Play, ArrowUp } from 'lucide-react'
 import { cn } from '@lib/utils'
@@ -69,6 +69,11 @@ interface ComposerProps {
   onResume?: (text?: string) => void
   placeholder?: string
   className?: string
+  /**
+   * Scope controls for the input row — which project, which branch. The page
+   * owns them; the composer only holds the slot.
+   */
+  scopeSlot?: ReactNode
   /** Actions the `/` palette can trigger in the host page. */
   slashActions?: {
     newTask: () => void
@@ -94,6 +99,7 @@ export function Composer({
   className,
   slashActions,
   onSlashInsert,
+  scopeSlot,
 }: ComposerProps) {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -580,6 +586,7 @@ export function Composer({
               + hover surface) that vertical lines between them were noise.
               Timeline density lives in Settings → 通用 instead: it's a standing
               display preference, not something you re-pick per turn. */}
+          {scopeSlot}
           <PermissionSelector />
           <ModelSelector />
           {thinkingCap.showDial && !thinkingCap.loading && (
