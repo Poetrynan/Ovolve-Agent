@@ -747,7 +747,7 @@ export function ActivityFeed({
   }
 
   // Group raw actions into IDE chronological semantic items
-  const { items, totalFilesEdited, totalAdded, totalRemoved } = useMemo(() => {
+  const { items } = useMemo(() => {
     const rawEvents = [
       ...reasoning.map((r, idx) => ({
         kind: 'reasoning' as const,
@@ -783,11 +783,6 @@ export function ActivityFeed({
       pendingExplorations = []
     }
 
-    let editCount = 0
-    let addedSum = 0
-    let removedSum = 0
-    const editedFilePaths = new Set<string>()
-
     for (const ev of rawEvents) {
       if (ev.kind === 'reasoning') {
         flushExplorations()
@@ -818,11 +813,6 @@ export function ActivityFeed({
           const isNew = name.includes('write_to_file') || name.includes('create')
           const action = isNew ? 'Created' : 'Edited'
 
-          const pathKey = fullPath || filename
-          if (pathKey) {
-            editedFilePaths.add(pathKey)
-          }
-
           let { added, removed } = diffStat(String(tc.result || ''))
           if (added === 0 && removed === 0) {
             const rawRepl = tc.args?.ReplacementContent
@@ -847,10 +837,6 @@ export function ActivityFeed({
             if (typeof rawTarget === 'string' && rawTarget) removed = rawTarget.split('\n').length
           }
           if (added === 0 && removed === 0) added = 1
-
-          editCount++
-          addedSum += added
-          removedSum += removed
 
           list.push({
             type: 'file_edit',
@@ -895,13 +881,7 @@ export function ActivityFeed({
     }
     flushExplorations()
 
-    return {
-      items: list,
-      totalFilesEdited: editedFilePaths.size,
-      totalEditOperations: editCount,
-      totalAdded: addedSum,
-      totalRemoved: removedSum,
-    }
+    return { items: list }
   }, [reasoning, toolCalls])
 
   // ── Early Waiting State (before any reasoning/tools arrive) ──
@@ -1803,103 +1783,6 @@ function ReasoningStreamBox({ text, isLive }: { text: string; isLive: boolean })
           </div>
         ))}
 
-      {/* Bottom Summary / Review Capsule (IDE review style) */}
-      {!working && totalFilesEdited > 0 && (() => {
-        const fileEdits = items.filter(it => it.type === 'file_edit')
-        const parsedFiles = fileEdits.map(fe => {
-          const tc = fe.call
-          const diffTarget = typeof tc.args?.TargetContent === 'string' ? tc.args.TargetContent
-            : typeof tc.args?.target_content === 'string' ? tc.args.target_content
-            : typeof tc.args?.targetContent === 'string' ? tc.args.targetContent
-            : typeof tc.args?.old_content === 'string' ? tc.args.old_content
-            : ''
-          const rawReplacement = tc.args?.ReplacementContent
-            ?? tc.args?.replacement_content
-            ?? tc.args?.replacementContent
-            ?? tc.args?.CodeContent
-            ?? tc.args?.code_content
-            ?? tc.args?.codeContent
-            ?? tc.args?.content
-            ?? tc.args?.code
-            ?? tc.args?.new_content
-            ?? tc.args?.newContent
-          const diffReplacement = typeof rawReplacement === 'string' ? rawReplacement : ''
-          const startLineRaw = tc.args?.StartLine ?? tc.args?.start_line ?? tc.args?.startLine
-          const diffStartLine = typeof startLineRaw === 'number' ? startLineRaw : 1
-
-          return {
-            filePath: fe.fullPath || fe.filename,
-            filename: fe.filename,
-            targetContent: diffTarget || undefined,
-            replacementContent: diffReplacement || undefined,
-            startLine: diffStartLine,
-            added: fe.added,
-            removed: fe.removed,
-            action: fe.action,
-            status: tc.status,
-          }
-        })
-
-        const handleOpenReview = (targetFile?: typeof parsedFiles[0]) => {
-          const target = targetFile || parsedFiles[parsedFiles.length - 1] || parsedFiles[0]
-          if (target) {
-            useSidePanelStore.getState().openEditor({
-              ...target,
-              allFiles: parsedFiles,
-            })
-          }
-        }
-
-        return (
-          <div
-            onClick={() => handleOpenReview()}
-            className="mt-2.5 space-y-2 p-3 rounded-xl border border-border/80 dark:border-white/15 bg-card/85 dark:bg-card/50 backdrop-blur-xl shadow-xs hover:border-primary/50 hover:shadow-sm transition-all ring-1 ring-black/[0.03] dark:ring-white/[0.05] cursor-pointer group select-none"
-          >
-            <div className="flex items-center justify-between text-xs font-medium text-foreground">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground/90 group-hover:text-primary transition-colors">
-                  {totalFilesEdited} file{totalFilesEdited > 1 ? 's' : ''} changed
-                </span>
-                <span className="font-mono text-[11px] tabular-nums">
-                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">+{totalAdded}</span>
-                  {' '}
-                  <span className="text-rose-600 dark:text-rose-400 font-semibold">-{totalRemoved}</span>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1 text-muted-foreground/70 group-hover:text-primary transition-colors text-[11.5px]">
-                <span>查看差异</span>
-                <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </div>
-
-            {parsedFiles.length > 1 && (
-              <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-border/30">
-                {parsedFiles.map((pf, pIdx) => (
-                  <button
-                    key={pIdx}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleOpenReview(pf)
-                    }}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 hover:bg-muted text-foreground/85 text-[11px] font-mono border border-border/50 hover:border-primary/40 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <OfficialFileIcon filename={pf.filename} size={12} />
-                    <span className="truncate max-w-[140px]">{pf.filename}</span>
-                    {(pf.added !== undefined || pf.removed !== undefined) && (
-                      <span className="text-[9.5px] tabular-nums font-mono">
-                        {pf.added ? <span className="text-emerald-500 font-semibold">+{pf.added}</span> : null}
-                        {pf.removed ? <span className="text-rose-500 font-semibold">-{pf.removed}</span> : null}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })()}
     </div>
   )
 }

@@ -28,6 +28,7 @@ import { ShadowValidationCard } from '@components/chat/ShadowValidationCard'
 import { VerificationCard } from '@components/chat/VerificationCard'
 import { StepProgress } from '@components/chat/StepProgress'
 import { ActivityFeed } from '@components/chat/ActivityFeed'
+import { TurnFileChanges } from '@components/chat/TurnFileChanges'
 import PlanReviewCard from '@components/chat/PlanReviewCard'
 import { SubagentPanel } from '@components/chat/SubagentPanel'
 import { ModelReadyBanner } from '@components/chat/ModelReadyBanner'
@@ -729,6 +730,9 @@ export default function ChatPage({
                         )}
                         {msg.images && msg.images.length > 0 && (
                           <ChatImages images={msg.images} />
+                        )}
+                        {!isUser && Boolean(msg.toolCalls?.length) && (
+                          <TurnFileChanges toolCalls={msg.toolCalls || []} className="mt-1" />
                         )}
                       </div>
                     </div>
