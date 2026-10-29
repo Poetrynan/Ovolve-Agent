@@ -2010,6 +2010,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           grantWorkspacesToMain(
             activeWorkspace,
             ...sessions.map((s: { workspace?: string }) => s.workspace),
+            // A conversation working in its own copy reads files there, so the
+            // fence has to cover the copy as well as the project.
+            ...sessions.map((s: { worktree_path?: string }) => s.worktree_path),
           )
           useSessionListStore.getState().applyList(
             sessions,
@@ -2021,6 +2024,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           const active = data.payload.active ?? ''
           grantWorkspacesToMain(active, ...workspaces.map((w: { path?: string }) => w.path))
           useSessionListStore.getState().applyWorkspaces(workspaces, active)
+        } else if (data.type === 'worktree_status') {
+          useSessionListStore.getState().applyWorktreeStatus(data.payload)
+        } else if (data.type === 'worktree_result') {
+          useSessionListStore.getState().applyWorktreeResult(data.payload)
         } else if (data.type === 'goal_state_change') {
           // Autonomous goal execution progress. Push into goalStore so the
           // Goals page updates without a manual refresh.

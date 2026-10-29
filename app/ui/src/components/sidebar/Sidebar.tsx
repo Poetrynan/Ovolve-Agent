@@ -673,6 +673,16 @@ function SessionRow({ session, active, onSwitch, onRename, onDelete, onTogglePin
           <TooltipContent side="right"><p>{t('sidebar.forkedSession')}</p></TooltipContent>
         </Tooltip>
       ) : null}
+      {session.worktree_path ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Copy size={11} className="shrink-0 text-primary/70" />
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>{session.worktree_branch ? `项目副本 · ${session.worktree_branch}` : '项目副本'}</p>
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
       <ActivityDot state={activity} />
 
       {editing ? (

@@ -364,6 +364,12 @@ export class StorageBase {
     this._safe_add_column("sessions", "sessions", "turn_status", "TEXT DEFAULT 'idle'");
     this._safe_add_column("sessions", "sessions", "turn_substatus", "TEXT DEFAULT ''");
     this._safe_add_column("sessions", "sessions", "status_updated_at", "INTEGER DEFAULT 0");
+    // A conversation can own an isolated copy of its project; these four
+    // columns are its binding. Empty on an ordinary conversation.
+    this._safe_add_column("sessions", "sessions", "worktree_path", "TEXT DEFAULT ''");
+    this._safe_add_column("sessions", "sessions", "worktree_branch", "TEXT DEFAULT ''");
+    this._safe_add_column("sessions", "sessions", "worktree_base", "TEXT DEFAULT ''");
+    this._safe_add_column("sessions", "sessions", "worktree_repo", "TEXT DEFAULT ''");
 
     this._normalize_workspace_paths();
     this._unbind_own_dirs();

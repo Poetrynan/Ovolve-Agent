@@ -28,14 +28,26 @@ import type { EventStore } from "../../event_store.js";
 import { PROCESS_GENERATION, SUBAGENT_TERMINAL_STATUSES } from "../storage_consts.js";
 import { pyJsonDumps } from "../storage_funcs.js";
 
+/** The isolation a conversation owns, as stored on its row. */
+export interface WorktreeBinding {
+  path: string;
+  branch: string;
+  base: string;
+  repo: string;
+}
+
 export interface SessionsDomainI {
   create_session(
     sid: string,
     title?: string,
     parent_id?: string | null,
     branch_point?: string | null,
-    workspace?: string
+    workspace?: string,
+    worktree?: WorktreeBinding | null
   ): Result<string>;
+  set_session_worktree(sid: string, worktree: WorktreeBinding): Result<string>;
+  clear_session_worktree(sid: string): Result<string>;
+  set_session_workspace(sid: string, path: string): Result<string>;
   branch(
     parent_id: string,
     branch_point: string | number,
@@ -107,14 +119,28 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
     title = "",
     parent_id: string | null = null,
     branch_point: string | null = null,
-    workspace = ""
+    workspace = "",
+    worktree: WorktreeBinding | null = null
   ): Result<string> {
     const self = this;
     const c = self._db("sessions");
     const now = intSeconds();
+    const wt = worktree ?? null;
     c.execute(
-      "INSERT OR IGNORE INTO sessions (id,title,created_at,updated_at,parent_id,branch_point,workspace) VALUES (?,?,?,?,?,?,?)",
-      [sid, title, now, now, parent_id, branch_point, workspace || ""]
+      "INSERT OR IGNORE INTO sessions (id,title,created_at,updated_at,parent_id,branch_point,workspace,worktree_path,worktree_branch,worktree_base,worktree_repo) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      [
+        sid,
+        title,
+        now,
+        now,
+        parent_id,
+        branch_point,
+        workspace || "",
+        wt ? String(wt.path || "") : "",
+        wt ? String(wt.branch || "") : "",
+        wt ? String(wt.base || "") : "",
+        wt ? String(wt.repo || "") : "",
+      ]
     );
     c.commit();
     try {
@@ -126,6 +152,7 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
           parent_id,
           branch_point,
           workspace: workspace || "",
+          ...(wt ? { worktree: { path: wt.path, branch: wt.branch, base: wt.base, repo: wt.repo } } : {}),
         },
         importance: "critical",
         // INSERT OR IGNORE above makes a repeated create a no-op for the
@@ -139,6 +166,53 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
     } catch (exc) {
       _audit_write_failed("create_session", exc);
     }
+    return Result.success(sid);
+  };
+
+  proto.set_session_worktree = function (
+    this: StorageBase & SessionsDomainI,
+    sid: string,
+    worktree: WorktreeBinding
+  ): Result<string> {
+    const c = this._db("sessions");
+    c.execute(
+      "UPDATE sessions SET worktree_path=?, worktree_branch=?, worktree_base=?, worktree_repo=? WHERE id=?",
+      [
+        String(worktree.path || ""),
+        String(worktree.branch || ""),
+        String(worktree.base || ""),
+        String(worktree.repo || ""),
+        sid,
+      ]
+    );
+    c.commit();
+    return Result.success(sid);
+  };
+
+  proto.clear_session_worktree = function (
+    this: StorageBase & SessionsDomainI,
+    sid: string
+  ): Result<string> {
+    const c = this._db("sessions");
+    c.execute(
+      "UPDATE sessions SET worktree_path='', worktree_branch='', worktree_base='', worktree_repo='' WHERE id=?",
+      [sid]
+    );
+    c.commit();
+    return Result.success(sid);
+  };
+
+  // Re-tag a conversation's project. Used when its isolated copy is gone:
+  // the row must fall back to the project the copy was carved from, or the
+  // sidebar keeps showing a folder that no longer exists.
+  proto.set_session_workspace = function (
+    this: StorageBase & SessionsDomainI,
+    sid: string,
+    path: string
+  ): Result<string> {
+    const c = this._db("sessions");
+    c.execute("UPDATE sessions SET workspace=? WHERE id=?", [String(path || ""), sid]);
+    c.commit();
     return Result.success(sid);
   };
 
@@ -528,11 +602,14 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
         ._db("sessions")
         .execute(
           `
-                SELECT s.id, s.title, s.created_at, s.updated_at, s.pinned, s.workspace,
+                SELECT s.id, s.title, s.created_at, s.updated_at, s.pinned,
+                       COALESCE(NULLIF(s.worktree_repo, ''), COALESCE(s.workspace, '')) AS workspace,
                        s.parent_id, CAST(s.branch_point AS INTEGER) AS branch_point,
+                       s.worktree_path, s.worktree_branch, s.worktree_base,
                        (SELECT COUNT(*) FROM session_messages m WHERE m.session_id = s.id) AS message_count
                 FROM sessions s
-                WHERE s.workspace = ? AND s.id NOT LIKE 'bench-%' AND s.id NOT LIKE 'tool-test-%'
+                WHERE COALESCE(NULLIF(s.worktree_repo, ''), COALESCE(s.workspace, '')) = ?
+                  AND s.id NOT LIKE 'bench-%' AND s.id NOT LIKE 'tool-test-%'
                 ORDER BY s.pinned DESC, s.updated_at DESC
                 LIMIT ?
             `,
@@ -544,8 +621,10 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
         ._db("sessions")
         .execute(
           `
-                SELECT s.id, s.title, s.created_at, s.updated_at, s.pinned, s.workspace,
+                SELECT s.id, s.title, s.created_at, s.updated_at, s.pinned,
+                       COALESCE(NULLIF(s.worktree_repo, ''), COALESCE(s.workspace, '')) AS workspace,
                        s.parent_id, s.branch_point,
+                       s.worktree_path, s.worktree_branch, s.worktree_base,
                        (SELECT COUNT(*) FROM session_messages m WHERE m.session_id = s.id) AS message_count
                 FROM sessions s
                 WHERE s.id NOT LIKE 'bench-%' AND s.id NOT LIKE 'tool-test-%'
@@ -580,7 +659,7 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
       ._db("sessions")
       .execute(
         `
-            SELECT COALESCE(s.workspace, '') AS path,
+            SELECT COALESCE(NULLIF(s.worktree_repo, ''), COALESCE(s.workspace, '')) AS path,
                    COUNT(DISTINCT s.id) AS session_count,
                    MAX(s.updated_at) AS last_used
             FROM sessions s

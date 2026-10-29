@@ -202,6 +202,7 @@ export type AgentEventType =
   | "shadow_validation" | "shadow_applied"
   | "subagent_stuck" | "post_edit_verification"
   | "plan_ready" | "plan_approved" | "plan_discarded"
+  | "worktree_status" | "worktree_result"
 
 /**
  * The persisted state of a session's turn (2.1).

@@ -29,6 +29,50 @@ export interface SessionSummary {
   parent_id?: string | null
   /** The parent seq the fork was taken at. */
   branch_point?: number | null
+  /**
+   * Set when this conversation edits its own isolated copy of the project,
+   * which is also what `workspace` points at for these rows. Null/absent for
+   * ordinary conversations.
+   */
+  worktree_path?: string | null
+  worktree_branch?: string | null
+  worktree_base?: string | null
+}
+
+/** Live shape of a conversation's isolated copy (`worktree_status` reply). */
+export interface SessionWorktree {
+  isWorktree: boolean
+  exists?: boolean
+  repo?: string
+  path?: string
+  branch?: string
+  base?: string
+  baseIsBranch?: boolean
+  currentBranch?: string
+  dirty?: boolean
+  dirtyCount?: number
+  ahead?: number
+  behind?: number
+  merged?: boolean
+  repoBranch?: string
+  repoDirty?: boolean
+  inProgress?: boolean
+  operation?: string
+}
+
+export interface WorktreeResult {
+  action: 'merge' | 'remove'
+  ok: boolean
+  error?: string
+  /** merge */
+  branch?: string
+  target?: string
+  message?: string
+  conflict?: boolean
+  conflictFiles?: string[]
+  /** remove */
+  keptBranch?: boolean
+  preserved?: boolean
 }
 
 export interface WorkspaceSummary {
@@ -65,6 +109,14 @@ interface SessionListState {
   collapsed: Set<string>
   /** sessionId -> liveness badge. Absent means "nothing to show". */
   activity: Record<string, SessionActivity>
+  /**
+   * The isolated copy owned by the conversation on screen, or null when it
+   * edits the project in place. A property of the conversation, not of the
+   * window, so it is re-read on every switch.
+   */
+  worktree: SessionWorktree | null
+  /** A merge/remove round-trip is in flight. */
+  worktreeBusy: boolean
 
   setQuery: (q: string) => void
   toggleCollapsed: (ws: string) => void
@@ -80,7 +132,19 @@ interface SessionListState {
   /** Optimistically update or add a session row on user send so sidebar updates with 0ms latency. */
   touchOrAddSession: (sessionId: string, title?: string, workspace?: string) => void
   refresh: () => void
-  newSession: () => void
+  /**
+   * New conversation. `executionMode: 'worktree'` gives it its own copy of the
+   * project instead of editing the project in place.
+   */
+  newSession: (opts?: { executionMode?: 'worktree'; startingPoint?: string; title?: string }) => void
+  /** Ask the backend what the on-screen conversation's copy looks like now. */
+  requestWorktreeStatus: () => void
+  /** Merge the copy's branch back into its base. Resolves with the reply. */
+  mergeWorktree: (target?: string) => Promise<WorktreeResult>
+  /** Remove the copy. Unmerged work stays reachable on its branch. */
+  removeWorktree: (deleteBranch?: boolean) => Promise<WorktreeResult>
+  applyWorktreeStatus: (payload: SessionWorktree) => void
+  applyWorktreeResult: (payload: WorktreeResult) => void
   switchTo: (id: string) => void
   remove: (id: string) => void
   rename: (id: string, title: string) => void
@@ -105,6 +169,8 @@ export const useSessionListStore = create<SessionListState>((set, get) => ({
   query: '',
   collapsed: new Set(),
   activity: {},
+  worktree: null,
+  worktreeBusy: false,
 
   setQuery: (query) => set({ query }),
   toggleCollapsed: (ws) => {
@@ -206,9 +272,28 @@ export const useSessionListStore = create<SessionListState>((set, get) => ({
   },
 
   refresh: () => { useAgentStore.getState().send('session_list') },
-  newSession: () => {
+  newSession: (opts) => {
     useSidePanelStore.getState().switchSession(null)
-    useAgentStore.getState().send('session_new')
+    useAgentStore.getState().send('session_new', opts)
+  },
+
+  requestWorktreeStatus: () => {
+    useAgentStore.getState().send('worktree_status')
+  },
+  mergeWorktree: (target) => worktreeRequest('merge', target ? { target } : {}),
+  removeWorktree: (deleteBranch) => worktreeRequest('remove', deleteBranch ? { deleteBranch: true } : {}),
+  applyWorktreeStatus: (payload) => {
+    set({ worktree: payload && payload.isWorktree ? payload : null })
+  },
+  applyWorktreeResult: (payload) => {
+    if (payload.action === 'remove' && payload.ok) {
+      set({ worktree: null })
+    } else {
+      // A merge moves the branch and may leave the copy dirty or clean; ask
+      // rather than guess.
+      useSessionListStore.getState().requestWorktreeStatus()
+    }
+    settleWorktreeRequest(payload)
   },
   switchTo: (id) => {
     if (id === get().activeId) return
@@ -247,6 +332,45 @@ export const useSessionListStore = create<SessionListState>((set, get) => ({
     }
   },
 }))
+
+/** The reply that settles one merge/remove round-trip. */
+let __wtPending: ((r: WorktreeResult) => void) | null = null
+let __wtTimer: ReturnType<typeof setTimeout> | null = null
+
+function settleWorktreeRequest(result: WorktreeResult): void {
+  if (__wtTimer !== null) { clearTimeout(__wtTimer); __wtTimer = null }
+  const done = __wtPending
+  __wtPending = null
+  useSessionListStore.setState({ worktreeBusy: false })
+  done?.(result)
+}
+
+/**
+ * Merge and remove are socket round-trips, so the promise is settled by the
+ * reply frame (`applyWorktreeResult`), not by the send call.
+ */
+function worktreeRequest(
+  action: 'merge' | 'remove',
+  payload: Record<string, unknown>,
+): Promise<WorktreeResult> {
+  if (__wtPending !== null) {
+    return Promise.resolve({ action, ok: false, error: '上一个操作还没结束' })
+  }
+  return new Promise<WorktreeResult>((resolve) => {
+    __wtPending = resolve
+    useSessionListStore.setState({ worktreeBusy: true })
+    const type = action === 'merge' ? 'worktree_merge' : 'worktree_remove'
+    if (!useAgentStore.getState().send(type, payload)) {
+      settleWorktreeRequest({ action, ok: false, error: '连接未就绪，请稍后再试' })
+      return
+    }
+    // A socket that dies mid-merge would otherwise leave the panel spinning
+    // with no way to retry.
+    __wtTimer = setTimeout(() => {
+      settleWorktreeRequest({ action, ok: false, error: '操作超时，请重试' })
+    }, 120_000)
+  })
+}
 
 /** Compact "how long ago" label. */
 export function relativeTime(epochSeconds: number, now = Date.now()): string {
@@ -369,3 +493,15 @@ function labelFor(workspace: string): string {
   if (!tail || tail === '.') return '默认工作区'
   return tail
 }
+
+// The copy belongs to the conversation, not to the window: on every switch the
+// previous one's status goes in the same tick, or a plain chat shows a 副本
+// badge until the next reply lands.
+let __wtLastSid = useAgentStore.getState().sessionId
+useAgentStore.subscribe((state) => {
+  if (state.sessionId === __wtLastSid) return
+  __wtLastSid = state.sessionId
+  settleWorktreeRequest({ action: 'merge', ok: false, error: '' })
+  useSessionListStore.setState({ worktree: null })
+  if (state.sessionId) useSessionListStore.getState().requestWorktreeStatus()
+})

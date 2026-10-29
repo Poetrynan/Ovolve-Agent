@@ -950,6 +950,14 @@ export class Router {
       // python `except RuntimeError` —— Node 恒有事件循环，这条分支生产不可达
       // （DIVERGENCE(port) 8），保留是因为 seam 可以抛。
     }
+    // A conversation bound to an isolated copy of its project has to OPEN in
+    // that copy. Everything above picked the workspace from the caller or the
+    // config, which knows nothing about per-conversation siblings; this is
+    // last so the move rebuilds the memory handle, rules and hooks mounted
+    // above instead of the other way round.
+    if (pyTruth(this.session_id)) {
+      this._adopt_worktree_workspace(this.session_id);
+    }
   }
 
   _init_event_subscribers(opts: { mount_shared?: boolean } = {}): void {

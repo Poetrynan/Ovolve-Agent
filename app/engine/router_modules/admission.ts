@@ -59,6 +59,9 @@
  * PORT STATUS: 本文件无 TODO(port)。
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
+
 import { DeliverAs, MAX_STEER_MERGED_CHARS, MessageQueue, get_message_queue } from "../messaging.js";
 import { Result } from "../result.js";
 import {
@@ -77,6 +80,7 @@ import { get_ask_user_store } from "../ask_user.js";
 import { get_rule_engine } from "../rule_engine.js";
 import * as token_estimate from "../token_estimate.js";
 import { pyJsonDumps } from "../storage/storage_funcs.js";
+import type { WorktreeBinding } from "../storage/domains/sessions.js";
 import { INTERRUPT_NOTE_TYPE, INTERRUPT_NUDGE } from "./loop.js";
 
 // The source's module-level import surface also pulls `MessageQueue` /
@@ -295,9 +299,15 @@ export const ADMISSION_SEAMS = {
   /** python `os.path.expanduser`（home 查找是唯一宿主触点）。 */
   expanduser: (p: string): string => pyExpanduser(p),
   /** python `os.path.abspath`。 */
-  abspath: (p: string): string => p,
+  abspath: (p: string): string => path.resolve(p),
   /** python `os.path.isdir`。 */
-  isdir: (_p: string): boolean => false,
+  isdir: (p: string): boolean => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  },
   /** python `os.environ`。 */
   environ: (): Record<string, string | undefined> => process.env as Record<string, string | undefined>,
   /** python 模块级 `from router_modules.loop import INTERRUPT_NOTE_TYPE, INTERRUPT_NUDGE`。 */
@@ -359,8 +369,14 @@ export function _reset_seams_for_parity(): void {
   ADMISSION_SEAMS.now = (): number => Date.now() / 1000;
   ADMISSION_SEAMS.uuid4 = (): string => cryptoRandomUUID();
   ADMISSION_SEAMS.expanduser = (p: string): string => pyExpanduser(p);
-  ADMISSION_SEAMS.abspath = (p: string): string => p;
-  ADMISSION_SEAMS.isdir = (): boolean => false;
+  ADMISSION_SEAMS.abspath = (p: string): string => path.resolve(p);
+  ADMISSION_SEAMS.isdir = (p: string): boolean => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  };
   ADMISSION_SEAMS.environ = (): Record<string, string | undefined> =>
     process.env as Record<string, string | undefined>;
   ADMISSION_SEAMS.loopModule = (): { INTERRUPT_NOTE_TYPE: string; INTERRUPT_NUDGE: string } => ({
@@ -1553,6 +1569,9 @@ export class RouterAdmissionMixin {
       return Result.failure(`Unknown session: ${sid}`);
     }
     this.session_id = sid;
+    // A conversation that owns an isolated copy of its project must run IN
+    // that copy; re-anchor before anything below reads `this.workspace`.
+    this._adopt_worktree_workspace(sid);
     this.goals.set_session(sid);
     this.goals.load_goal_state(sid);
     // Keep the fold-card tag in sync with the session we now serve.
@@ -1580,7 +1599,11 @@ export class RouterAdmissionMixin {
     return Result.success(sid);
   }
 
-  new_session(title = "", workspace: string | null = null): Result {
+  new_session(
+    title = "",
+    workspace: string | null = null,
+    worktree: WorktreeBinding | null = null,
+  ): Result {
     /** Create a fresh session and switch to it.
      *
      * The session is tagged with the workspace it belongs to (defaults to the
@@ -1588,11 +1611,49 @@ export class RouterAdmissionMixin {
      * The default is ``effective_workspace``, not ``self.workspace``: with no
      * folder picked the latter is the launch cwd, and tagging a session with
      * it invents a workspace group out of Ovolve's own directory.
+     *
+     * ``worktree`` binds the new conversation to an isolated copy of its
+     * project. The copy is where the agent actually works, so it is the
+     * session's workspace; the project it was carved from travels with it so
+     * the sidebar can keep grouping the conversation under that project.
      */
     const new_sid = pyStr(ADMISSION_SEAMS.uuid4());
-    const ws = workspace === null ? this.effective_workspace : workspace;
-    this.storage.create_session(new_sid, title || "New chat", null, null, ws || "");
+    const ws = workspace === null
+      ? (worktree !== null ? pyStr(worktree.path) : this._default_new_session_workspace())
+      : workspace;
+    this.storage.create_session(new_sid, title || "New chat", null, null, ws || "",
+      worktree === null ? null : {
+        path: pyStr(worktree.path),
+        branch: pyStr(worktree.branch),
+        base: pyStr(worktree.base),
+        repo: pyStr(worktree.repo),
+      });
     return this.switch_session(new_sid);
+  }
+
+  _default_new_session_workspace(): string {
+    /** Project a NEW conversation belongs to when the caller named none.
+     *
+     * While an isolated conversation is open, ``effective_workspace`` answers
+     * with its copy — a throwaway sibling directory that belongs to that one
+     * conversation. A fresh chat is a fresh start, so it lands in the project
+     * the copy was carved from instead of inheriting someone else's sandbox.
+     */
+    let row: any = null;
+    try {
+      row = this.session_id ? this.storage.get_session(this.session_id) : null;
+    } catch {
+      // BUG(port) 风格：读不到行只是回到旧默认，不值得炸掉新建会话。
+      row = null;
+    }
+    if (row) {
+      const copy = pyStr(dictGet(row, "worktree_path", "") || "");
+      const repo = pyStr(dictGet(row, "worktree_repo", "") || "");
+      if (copy && repo) {
+        return repo;
+      }
+    }
+    return this.effective_workspace;
   }
 
   get effective_workspace(): string {
@@ -1609,6 +1670,142 @@ export class RouterAdmissionMixin {
      * `''` = 默认工作区 convention the sessions table already uses.
      */
     return pyTruth(pyGetAttr(this, "workspace_selected", false)) ? this.workspace : "";
+  }
+
+  get display_workspace(): string {
+    /** The workspace to SHOW for the current conversation: its project.
+     *
+     * An isolated conversation works in a copy, so ``effective_workspace``
+     * reports the copy — an internal directory the user never picked and does
+     * not want highlighted as a workspace. Report the project the copy was
+     * carved from instead, so the sidebar keeps the conversation under the
+     * folder the user actually opened.
+     */
+    let row: any = null;
+    try {
+      row = this.session_id ? this.storage.get_session(this.session_id) : null;
+    } catch {
+      row = null;
+    }
+    if (row) {
+      const copy = pyStr(dictGet(row, "worktree_path", "") || "");
+      const repo = pyStr(dictGet(row, "worktree_repo", "") || "");
+      if (copy && repo) {
+        return repo;
+      }
+    }
+    return this.effective_workspace;
+  }
+
+  _adopt_worktree_workspace(sid: string): void {
+    /** Point the Router at the isolated copy this conversation owns, if any.
+     *
+     * An ordinary conversation owns no copy: its row's workspace is only a
+     * grouping tag, and the connection-wide workspace stays where it is. A
+     * conversation bound to a copy is different — the copy is where its files
+     * are, so the sandbox, the file tools and the git routes all have to
+     * follow it.
+     *
+     * A binding whose directory is gone is dead: forget it and stand on the
+     * project, rather than running turns in a folder that no longer exists.
+     */
+    let row: any = null;
+    try {
+      row = this.storage.get_session(sid);
+    } catch (exc) {
+      console.log(`[Router] worktree lookup failed for ${sid}: ${excStr(exc)}`);
+      return;
+    }
+    const copy = row ? pyStr(dictGet(row, "worktree_path", "") || "") : "";
+    const repo = row ? pyStr(dictGet(row, "worktree_repo", "") || "") : "";
+    if (!copy) {
+      this._leave_worktree();
+      return;
+    }
+    if (!pyTruth(pyGetAttr(this, "_worktree_return", null))) {
+      // Remembered once, on the way in: switching between two isolated
+      // conversations must not overwrite the user's real folder with the
+      // first copy.
+      this._worktree_return = {
+        workspace: pyStr(this.workspace),
+        selected: pyTruth(pyGetAttr(this, "workspace_selected", false)),
+      };
+    }
+    if (ADMISSION_SEAMS.isdir(copy)) {
+      this._repoint_workspace(copy);
+      return;
+    }
+    try {
+      this.storage.clear_session_worktree(sid);
+      if (repo) {
+        this.storage.set_session_workspace(sid, repo);
+      }
+    } catch (exc) {
+      console.log(`[Router] worktree binding cleanup failed for ${sid}: ${excStr(exc)}`);
+    }
+    if (repo && ADMISSION_SEAMS.isdir(repo)) {
+      this._repoint_workspace(repo);
+    }
+  }
+
+  _leave_worktree(): void {
+    /** Put the Router back where it stood before it moved into a copy.
+     *
+     * Only acts when this connection actually entered a copy; a router that
+     * never did is left exactly as it was.
+     */
+    const back: any = pyGetAttr(this, "_worktree_return", null);
+    if (!pyTruth(back)) {
+      return;
+    }
+    this._worktree_return = null;
+    this.workspace = back.workspace;
+    this.workspace_selected = pyTruth(back.selected);
+    if (pyTruth(back.workspace)) {
+      this._rebind_workspace(back.workspace);
+    }
+  }
+
+  _repoint_workspace(path: string): void {
+    /** Move the Router into ``path`` without creating a session.
+     *
+     * `switch_workspace` does the same three rebuilds, but it starts a new
+     * conversation by design; following a copy must not. Unlike that method
+     * this never persists ``active_workspace``: a copy belongs to one
+     * conversation, and remembering it would reopen the app inside it.
+     */
+    const resolved = ADMISSION_SEAMS.abspath(ADMISSION_SEAMS.expanduser(path));
+    if (resolved === this.workspace && pyTruth(pyGetAttr(this, "workspace_selected", false))) {
+      return;
+    }
+    this.workspace = resolved;
+    this.workspace_selected = true;
+    this._rebind_workspace(resolved);
+  }
+
+  _rebind_workspace(path: string): void {
+    /** Rebuild what was bound to the old path at construction.
+     *
+     * Same three components `switch_workspace` rebuilds, each independently
+     * optional: memory scope, the rule engine (`<ws>/.ovolve/rules`) and the
+     * hook runner.
+     */
+    try {
+      this.memory.rescope(path, this.session_id);
+    } catch (exc) {
+      console.log(`[Router] memory root repoint failed for ${path}: ${excStr(exc)}`);
+    }
+    try {
+      this.rules = ADMISSION_SEAMS.get_rule_engine(path);
+    } catch (exc) {
+      console.log(`[Router] rule engine rebuild failed for ${path}: ${excStr(exc)}`);
+    }
+    try {
+      const init_hooks = ADMISSION_SEAMS.hookRunnerModule()["init_hooks"] as (...a: any[]) => unknown;
+      init_hooks(path, this.session_id);
+    } catch (exc) {
+      console.log(`[Router] hook re-init failed for ${path}: ${excStr(exc)}`);
+    }
   }
 
   switch_workspace(path: string): Result {
@@ -1677,6 +1874,11 @@ export class RouterAdmissionMixin {
       // BUG(port): 源为 `except Exception as _e`，宽吞逐字保留。
       console.log(`[router] persist active_workspace FAILED: ${excStr(_e)}`);
     }
+
+    // The user just picked this folder, so no isolated copy is in effect any
+    // more; forgetting the entry point keeps the new conversation's workspace
+    // from being swapped back to the previous base when it attaches.
+    this._worktree_return = null;
 
     return this.new_session("", resolved);
   }

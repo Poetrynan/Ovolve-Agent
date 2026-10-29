@@ -187,6 +187,8 @@ import {
   subagent_child_session as util_subagent_child_session,
   tool_reversible as util_tool_reversible,
 } from "./http_server_util.js";
+// 本段新增（非源）：会话级隔离副本的生命周期。源里没有这一层，故不经过 seam 表。
+import * as session_worktree from "../session_worktree.js";
 
 /* ══════════════════════════════════════════════════════════════════════════
  * §0 私有异常（各段私有 ⇒ **不 export**，§M 里没有同名符号）
@@ -346,6 +348,9 @@ export interface StorageApi {
   autotitle_session(sid: unknown, text: unknown): unknown;
   /** 源 2580 `storage.delete_session(sid)`（**无 try** ⇒ 失败冒出 `_handle_message`，见 S2-B3）。 */
   delete_session(sid: unknown): unknown;
+  /** 隔离副本的绑定（会话详情面，本段新增，见 `session_worktree`）。 */
+  clear_session_worktree(sid: unknown): unknown;
+  set_session_workspace(sid: unknown, path: unknown): unknown;
   list_workspaces(opts: { always_include: unknown }): unknown;
   upsert_workspace(path: unknown, opts?: { touch_opened?: boolean }): unknown;
   rename_workspace(path: unknown, name: unknown): unknown;
@@ -372,6 +377,7 @@ export interface RouterApi {
   readonly workspace?: string | null;
   readonly workspace_dir?: string | null;
   readonly effective_workspace?: string | null;
+  readonly display_workspace?: string | null;
   readonly default_model?: unknown;
   readonly permission_mode?: unknown;
   permission?: unknown;
@@ -383,7 +389,7 @@ export interface RouterApi {
   cancel_hard?(): unknown;
   switch_workspace(path: unknown): ResultApi;
   switch_session(sid: unknown): ResultApi;
-  new_session(title?: unknown): ResultApi;
+  new_session(title?: unknown, workspace?: unknown, worktree?: unknown): ResultApi;
   fold_context(opts: { manual: boolean }): Promise<ResultApi>;
   get_system_prompt?(): unknown;
   _tool_def_tokens?(): unknown;
@@ -2540,6 +2546,12 @@ export class WebSocketHandler {
       await this._handle_session_fork(ws, payload);
     } else if (event_type === "session_delete") {
       await this._handle_session_delete(ws, payload);
+    } else if (event_type === "worktree_status") {
+      await this._handle_worktree_status(ws, payload);
+    } else if (event_type === "worktree_merge") {
+      await this._handle_worktree_merge(ws, payload);
+    } else if (event_type === "worktree_remove") {
+      await this._handle_worktree_remove(ws, payload);
     } else if (event_type === "session_rename") {
       await this._handle_session_rename(ws, payload);
     } else if (event_type === "session_pin") {
@@ -2602,7 +2614,10 @@ export class WebSocketHandler {
       payload: {
         sessions,
         activeId: router.session_id,
-        activeWorkspace: router.effective_workspace ?? null,
+        activeWorkspace: py_or(
+          py_getattr_or(router, "display_workspace", null),
+          router.effective_workspace ?? null,
+        ),
       },
     });
   }
@@ -2644,8 +2659,11 @@ export class WebSocketHandler {
     const ws = opts.ws === undefined ? null : opts.ws;
     const router = ws !== null ? this._router_for(ws) : this.router;
     /* 2109–2111 的注释是语义本体：用 `effective_workspace` 而不是 `workspace`（后者会回落到
-     * 后端自身的启动目录，于是那个用户从没打开过的目录会被列成真实工作区并高亮为 active）。 */
-    const active = py_getattr(router, "effective_workspace");
+     * 后端自身的启动目录，于是那个用户从没打开过的目录会被列成真实工作区并高亮为 active）。
+     * 隔离副本同理：对话在自己的一份拷贝里干活，高亮的仍应是它所属的项目。 */
+    const active = py_getattr_or(
+      router, "display_workspace", py_getattr(router, "effective_workspace"),
+    );
     return {
       type: "workspace_list",
       timestamp: this.seams.now(),
@@ -3023,12 +3041,166 @@ export class WebSocketHandler {
 
   /** 源 2472–2477 `_handle_session_new`。 */
   async _handle_session_new(ws: unknown, payload: JsonLike): Promise<void> {
-    const result = this._router_for(ws).new_session(gd(payload, "title", ""));
+    const router = this._router_for(ws);
+    const title = gd(payload, "title", "");
+    /* 新增：`executionMode: "worktree"` 让这条对话在自己的一份项目副本里开工。
+     * 源里没有这个模式；不带它的 `session_new` 与源逐字一致。 */
+    const mode = py_strip(py_str(py_or(g(payload, "executionMode"), "")));
+    if (mode !== "worktree") {
+      const result = router.new_session(title);
+      if (!result.ok) {
+        await this._send_error(ws, result.error);
+        return;
+      }
+      await this._switch_and_reply(ws, result.value);
+      return;
+    }
+
+    const repo = py_str(py_or(py_getattr_or(router, "display_workspace", ""), ""));
+    if (!py_truth(repo)) {
+      await this._send_error(ws, "先选择项目，再在这个项目里创建副本");
+      return;
+    }
+    const made = await session_worktree.create(repo, {
+      name: py_strip(py_str(title)) || "chat",
+      base: py_strip(py_or(gd(payload, "startingPoint", ""), "") as string),
+    });
+    if (!made.ok) {
+      await this._send_error(ws, made.error);
+      return;
+    }
+    const result = router.new_session(title, made.meta.path, made.meta);
     if (!result.ok) {
+      // The conversation never came to life, so its copy is garbage now.
+      await session_worktree.dispose(made.meta);
       await this._send_error(ws, result.error);
       return;
     }
     await this._switch_and_reply(ws, result.value);
+  }
+
+  /** Read a conversation's copy binding, or null when it owns none. */
+  _worktree_meta(sid: unknown): session_worktree.WorktreeMeta | null {
+    if (!py_truth(sid)) {
+      return null;
+    }
+    let row: unknown = null;
+    try {
+      row = this.router.storage.get_session(sid);
+    } catch (exc) {
+      swallow_if_exception(exc);
+      return null;
+    }
+    if (row === null || row === undefined || typeof row !== "object") {
+      return null;
+    }
+    return session_worktree.meta_from_row(row as Record<string, unknown>);
+  }
+
+  /** What the copy of one conversation looks like right now. */
+  async _handle_worktree_status(ws: unknown, payload: JsonLike): Promise<void> {
+    const router = this._router_for(ws);
+    const sid = py_or(g(payload, "sessionId"), router.session_id);
+    const meta = this._worktree_meta(sid);
+    if (meta === null) {
+      await (ws as WebSocketResponseApi).send_json({
+        type: "worktree_status",
+        timestamp: this.seams.now(),
+        sessionId: sid,
+        payload: { isWorktree: false },
+      });
+      return;
+    }
+    let status: unknown;
+    try {
+      status = await session_worktree.status(meta);
+    } catch (exc) {
+      await this._send_error(ws, `worktree_status failed: ${exc_str(exc)}`);
+      return;
+    }
+    await (ws as WebSocketResponseApi).send_json({
+      type: "worktree_status",
+      timestamp: this.seams.now(),
+      sessionId: sid,
+      payload: status,
+    });
+  }
+
+  /** 副本操作只有一个回信形状：点下去的每一次都一定能得到答复。 */
+  async _worktree_result(
+    ws: unknown,
+    sid: unknown,
+    action: "merge" | "remove",
+    payload: JsonLike,
+  ): Promise<void> {
+    await (ws as WebSocketResponseApi).send_json({
+      type: "worktree_result",
+      timestamp: this.seams.now(),
+      sessionId: sid,
+      payload: { action, ...payload },
+    });
+  }
+
+  /** Merge the copy's branch back into the project branch it started from. */
+  async _handle_worktree_merge(ws: unknown, payload: JsonLike): Promise<void> {
+    const router = this._router_for(ws);
+    const sid = py_or(g(payload, "sessionId"), router.session_id);
+    if (this._turn_running_sid(sid)) {
+      await this._worktree_result(ws, sid, "merge", { ok: false, error: "回合还在跑，先停下来再合并" });
+      return;
+    }
+    const meta = this._worktree_meta(sid);
+    if (meta === null) {
+      await this._worktree_result(ws, sid, "merge", { ok: false, error: "这个对话没有副本可合并" });
+      return;
+    }
+    const target = py_strip(py_str(py_or(gd(payload, "target", ""), "")));
+    const result = await session_worktree.merge_back(meta, target || undefined);
+    await this._worktree_result(ws, sid, "merge", result);
+    await this._broadcast_session_list();
+    await this._broadcast_workspace_list();
+  }
+
+  /** Remove the copy. Unmerged work stays reachable on its branch. */
+  async _handle_worktree_remove(ws: unknown, payload: JsonLike): Promise<void> {
+    const router = this._router_for(ws);
+    const sid = py_or(g(payload, "sessionId"), router.session_id);
+    if (this._turn_running_sid(sid)) {
+      await this._worktree_result(ws, sid, "remove", { ok: false, error: "回合还在跑，先停下来再移除副本" });
+      return;
+    }
+    const meta = this._worktree_meta(sid);
+    if (meta === null) {
+      await this._worktree_result(ws, sid, "remove", { ok: false, error: "这个对话没有副本" });
+      return;
+    }
+    let result: session_worktree.DisposeResult;
+    try {
+      result = await session_worktree.dispose(meta, {
+        deleteBranch: py_truth(gd(payload, "deleteBranch", false)),
+      });
+    } catch (exc) {
+      await this._worktree_result(ws, sid, "remove", { ok: false, error: `移除副本失败：${exc_str(exc)}` });
+      return;
+    }
+    if (result.ok) {
+      try {
+        router.storage.clear_session_worktree(sid);
+        if (py_truth(meta.repo)) {
+          router.storage.set_session_workspace(sid, meta.repo);
+        }
+      } catch (exc) {
+        this.seams.py_print(`[worktree] binding cleanup failed: ${exc_str(exc)}`);
+      }
+      /* The socket's own conversation is the one the router is standing in;
+       * re-anchoring it after the binding is gone walks it back out. */
+      if (sid === router.session_id) {
+        router.switch_session(sid);
+      }
+    }
+    await this._worktree_result(ws, sid, "remove", { ...result });
+    await this._broadcast_session_list();
+    await this._broadcast_workspace_list();
   }
 
   /** 源 2479–2487 `_handle_session_switch`。 */
@@ -3141,8 +3313,24 @@ export class WebSocketHandler {
     const router = this._router_for(ws);
     const storage = router.storage;
     const was_active = sid === router.session_id;
+    const worktree = this._worktree_meta(sid);
     /* 源 2580：`delete_session` **不在 try 里** ⇒ 失败冒出 handler（S2-B3：整条 WS 报废）。 */
     storage.delete_session(sid);
+
+    /* A conversation's copy outlives no one: drop it with the conversation, but
+     * after the row is gone, so a slow or failing git call can never keep a
+     * conversation the user asked to delete. Unmerged work stays on its branch. */
+    if (worktree !== null) {
+      try {
+        const gone = await session_worktree.dispose(worktree);
+        if (!gone.ok) {
+          this.seams.py_print(`[worktree] copy kept after session delete: ${py_str(gone.error)}`);
+        }
+      } catch (exc) {
+        swallow_if_exception(exc);
+        this.seams.py_print(`[worktree] copy dispose failed: ${exc_str(exc)}`);
+      }
+    }
 
     try {
       this.seams.get_terminal_manager().close(sid);
@@ -3159,7 +3347,9 @@ export class WebSocketHandler {
         await this._switch_and_reply(ws, sub(py_iter(remaining)[0] as JsonLike, "id"));
         return;
       }
-      const result = router.new_session();
+      const result = worktree !== null && py_truth(worktree.repo)
+        ? router.new_session("", worktree.repo)
+        : router.new_session();
       if (!result.ok) {
         await this._send_error(ws, result.error);
         return;
