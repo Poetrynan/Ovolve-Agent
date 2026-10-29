@@ -44,6 +44,7 @@ import {
 import { auth_middleware } from "../api_auth.js";
 
 import { WebSocketHandler } from "./http_server_s1.js";
+import { createProductionSeams, NATIVE_WS_CHANNEL } from "./http_server_runtime.js";
 
 import {
   handle_health,
@@ -832,10 +833,69 @@ export function handleNativeWebSocketUpgrade(
     read: async () => new Uint8Array(),
   };
 
+  // The session loop asks its seam for a websocket response and binds it to
+  // this request; park the frame adapter where that seam looks for it.
+  (webReq as unknown as Record<PropertyKey, unknown>)[NATIVE_WS_CHANNEL] = clientAdapter;
+
   // Launch session loop in background
   wsHandler.handle_websocket(webReq as any).catch((e) => {
     console.error("[server:ws] Session loop closed:", e?.message);
   });
+}
+
+/**
+ * Lines `git diff --numstat` would report for a brand-new file: every record
+ * separated by `\n`, with no phantom last line for a trailing newline.
+ */
+function count_added_lines(text: string): number {
+  if (!text) return 0;
+  const lines = text.split("\n");
+  return text.endsWith("\n") ? lines.length - 1 : lines.length;
+}
+
+/** Read at most `capBytes` from a file; unreadable files count as empty. */
+function read_capped(file: string, capBytes: number): string {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(capBytes);
+    const n = fs.readSync(fd, buf, 0, capBytes, 0);
+    return buf.subarray(0, n).toString("utf8");
+  } catch {
+    return "";
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+    }
+  }
+}
+
+/** Untracked roll-up across many files, bounded by count and bytes. */
+function untracked_additions(
+  repo: string,
+  paths: string[],
+  capFiles: number,
+  capBytes: number,
+): number {
+  let total = 0;
+  for (const p of paths.slice(0, capFiles)) {
+    total += count_added_lines(read_capped(path.join(repo, p), capBytes));
+  }
+  return total;
+}
+
+/** Same roll-up, but every path keeps its own count. */
+function untracked_additions_detailed(
+  repo: string,
+  paths: string[],
+  capFiles: number,
+  capBytes: number,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of paths.slice(0, capFiles)) {
+    out[p] = count_added_lines(read_capped(path.join(repo, p), capBytes));
+  }
+  return out;
 }
 
 /**
@@ -863,6 +923,8 @@ export async function wireDefaultSeams(sessionHost?: any): Promise<void> {
     const webOutbound = await import("../web_outbound.js");
     const storage = await import("../storage.js");
     const sessionHostModule = await import("../session_host.js");
+    const { git: runGitSync } = await import("../session_worktree.js");
+    const { execFile } = await import("node:child_process");
 
     const { register_s9_seam } = await import("./http_server_s9.js");
     const { register_s8_seam } = await import("./http_server_s8.js");
@@ -881,6 +943,41 @@ export async function wireDefaultSeams(sessionHost?: any): Promise<void> {
     register_s8_seam("session_host_module", () => sessionHostModule);
     register_s8_seam("shadow_session_module", () => shadowSession);
     register_s8_seam("shadow_workspace_module", () => shadowWorkspace);
+    register_s8_seam("subprocess_git_runner", () => ({
+      run: (repo: string, args: string[], timeout: number) => {
+        const r = runGitSync(repo, args, timeout);
+        return { returncode: r.code, stdout: r.stdout, stderr: r.stderr };
+      },
+      run_async: (repo: string, args: string[], timeout: number) =>
+        new Promise((resolve) => {
+          execFile(
+            "git",
+            args,
+            {
+              cwd: repo,
+              timeout: Math.max(1, Number(timeout) || 1) * 1000,
+              maxBuffer: 16 * 1024 * 1024,
+              windowsHide: true,
+            },
+            (err, stdout, stderr) => {
+              const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number"
+                ? ((err as { code: number }).code)
+                : -1;
+              resolve({ returncode: code, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
+            },
+          );
+        }),
+      // `.git` is a directory in a checkout and a file in a linked worktree;
+      // either one means this path is a working tree we can read.
+      has_git_dir: (repo: string) => {
+        try {
+          return fs.existsSync(path.join(repo, ".git"));
+        } catch {
+          return false;
+        }
+      },
+    }));
+    register_s8_seam("fs_reader", () => ({ untracked_additions, untracked_additions_detailed }));
 
     set_http_s7_seams({
       memory_layer_module: () => memoryLayer,
@@ -928,8 +1025,12 @@ export async function run_server(
 
   // Lazy-load sub-agents and capability modules
   const { Router } = await import("../router.js");
-  const { SessionHost, set_session_host } = await import("../session_host.js");
+  const { SessionHost, set_session_host, SESSION_HOST_SEAMS } = await import("../session_host.js");
   const { init_risk_controller } = await import("../risk_control.js");
+
+  // Sessions opened after boot build their own Router lazily; the host needs
+  // the real constructor for that.
+  SESSION_HOST_SEAMS.Router = Router as unknown as typeof SESSION_HOST_SEAMS.Router;
 
   const permMode = (config["permissions"] as JsonDict)?.["mode"] || "auto";
   init_risk_controller(String(permMode));
@@ -953,7 +1054,8 @@ export async function run_server(
   appState.set(APP_KEYS.SESSION_HOST_KEY, sessionHost as any);
 
   // Initialize WebSocketHandler
-  const wsHandler = new WebSocketHandler(sessionHost as any);
+  const wsSeams = await createProductionSeams();
+  const wsHandler = new WebSocketHandler(sessionHost as any, wsSeams);
 
   // Compile routes and build registry
   const compiledRoutes = compileRoutes(ROUTE_TABLE);
@@ -969,6 +1071,32 @@ export async function run_server(
 
   server.on("upgrade", (req, socket) => {
     if (req.url === "/ws" || req.url?.startsWith("/ws")) {
+      // A WebSocket handshake is an ordinary GET, so it goes through the same
+      // token check as every other route. The renderer cannot set headers on a
+      // socket, hence the `?token=` fallback in extract_token.
+      const parsedUrl = new URL(req.url, "http://127.0.0.1");
+      const wsQuery: Record<string, string> = {};
+      parsedUrl.searchParams.forEach((v, k) => {
+        wsQuery[k] = v;
+      });
+      const wsAuth = auth_middleware({
+        method: "GET",
+        path: parsedUrl.pathname,
+        headers: req.headers as Record<string, string | undefined>,
+        query: wsQuery,
+      });
+      if (wsAuth) {
+        const body = JSON.stringify(wsAuth.body);
+        socket.write(
+          `HTTP/1.1 ${wsAuth.status} Unauthorized\r\n` +
+            "Content-Type: application/json\r\n" +
+            `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+            "Connection: close\r\n\r\n" +
+            body,
+        );
+        socket.destroy();
+        return;
+      }
       handleNativeWebSocketUpgrade(req, socket, wsHandler, appState);
     } else {
       socket.destroy();

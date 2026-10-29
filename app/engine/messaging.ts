@@ -828,6 +828,11 @@ export class MessageQueue {
     get ui_pending(): number {
         return this._items.length;
     }
+
+    /** 队列是否被暂停（停止/出错后中止自动排空）。 */
+    get is_paused(): boolean {
+        return this._paused;
+    }
 }
 
 // ── singleton ────────────────────────────────────────────────────────────────

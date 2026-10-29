@@ -76,11 +76,11 @@
  *        旧计时器无人取消。
  *
  * ── S2（1137–2795）源码自带死路 / 不一致（同 §2 BUG 规则，编号 S2-Bn） ─────────────
- * S2-B1  1207/1214/1215：`_run_turn` 的 `ctx["approved_plan"]` 一次缩进进死支、一次无条件重复 ⇒
- *        任何**不带 `approved_plan` 键**的 `context_extra` 都在 1215 抛 KeyError，且该句在三只 try
+ * S2-B1  `_run_turn` 的 `ctx["approved_plan"]`：移植时把"键存在才转发"写成了无条件下标 ⇒
+ *        任何**不带 `approved_plan` 键**的 `context_extra` 都抛 KeyError，且该句在三只 try
  *        之前 ⇒ user_prompt / respond_permission / respond_question / resume_turn 四条臂全中招
- *        （只有 approve_plan 臂 1717 带键、只有 `source="queue"` 因为 `context_extra=None` 整块跳过而活着）。
- *        详见 `_run_turn` 头注。
+ *        （只有 approve_plan 臂带键、只有 `source="queue"` 因为 `context_extra=None` 整块跳过而活着）。
+ *        已改回存在才转发；详见 `_run_turn` 头注。
  * S2-B2  1604/1659/1722/1787/1943：五只闭包的 `finally` 都是**按 key 无条件 pop**，不校验挂着的
  *        还是不是自己 ⇒ 前手收尾会抹掉后手的登记（此后 `_turn_running` 对该 socket 恒 False）。
  * S2-B3  897–904 + 全部分派臂：`_handle_message` 被包在**只接 `json.JSONDecodeError`** 的 try 里
@@ -203,8 +203,9 @@ class PyNameErrorP extends Error {
   }
 }
 
-/** `json.JSONDecodeError`（`json.loads` 的失败面，只在源 903 的那一只 try 里被捕获）。 */
-class PyJsonDecodeErrorP extends Error {
+/** `json.JSONDecodeError`（`json.loads` 的失败面，只在源 903 的那一只 try 里被捕获）。
+ *  运行时 seam 的 `json_loads` 必须抛**同一个类**，否则本段的 `except` 认不出来 ⇒ 导出。 */
+export class PyJsonDecodeErrorP extends Error {
   readonly name_of_exc = "JSONDecodeError";
   constructor(m: string) {
     super(m);
@@ -212,8 +213,9 @@ class PyJsonDecodeErrorP extends Error {
   }
 }
 
-/** `asyncio.CancelledError`（源 1362 / 1111 两只窄 catch 的匹配面）。 */
-class PyCancelledErrorP extends Error {
+/** `asyncio.CancelledError`（源 1362 / 1111 两只窄 catch 的匹配面；运行时 seam 的
+ *  任务取消同样要抛这个类 ⇒ 导出）。 */
+export class PyCancelledErrorP extends Error {
   readonly name_of_exc = "CancelledError";
   constructor() {
     super("CancelledError");
@@ -318,14 +320,14 @@ export interface EventBusApi {
   on(event: string, handler: (event: unknown) => Promise<unknown>, priority: number): unknown;
 }
 
-/** `router.queue` 的 UI 面（源 927 / 1582 / 1808 / 1837–1872 / 1984 用到的方法）。 */
+/** `router.queue` 的 UI 面（源 927 / 1582 / 1808 / 1837–1872 / 1984 用到的方法）。
+ *  源里的关键字调用在这里落成**位置参**（Python `ui_enqueue(text, urgent=False, requested="", reason="")`
+ *  与 `send_message(content, deliver_as=…, sender="user")` 本来就是位置形参，seam 不造第二套脸）。 */
 export interface UiQueueApi {
   ui_snapshot(): unknown;
   readonly ui_pending: number;
   readonly is_paused: boolean;
-  ui_enqueue(text: unknown, opts?: {
-    requested?: unknown; reason?: unknown; urgent?: unknown;
-  }): Promise<unknown>;
+  ui_enqueue(text: unknown, urgent?: unknown, requested?: unknown, reason?: unknown): Promise<unknown>;
   ui_take_next(): Promise<unknown>;
   ui_remove(id: unknown): Promise<unknown>;
   ui_clear(): Promise<unknown>;
@@ -334,14 +336,14 @@ export interface UiQueueApi {
   ui_reorder(ids: readonly unknown[]): Promise<unknown>;
   ui_pause(reason: unknown): Promise<unknown>;
   ui_resume(): Promise<unknown>;
-  send_message(text: unknown, deliver_as: unknown, opts?: { sender?: unknown }): Promise<unknown>;
+  send_message(text: unknown, deliver_as: unknown, sender?: unknown): Promise<unknown>;
 }
 
 /** `storage` 的读取面（本段用到的 11 个方法）。 */
 export interface StorageApi {
   list_sessions(limit?: number): unknown;
   get_session(sid: unknown): unknown;
-  get_messages(sid: unknown, opts: { limit: number }): readonly unknown[];
+  get_messages(sid: unknown, limit?: number): readonly unknown[];
   add_message(sid: unknown, role: unknown, content: unknown): unknown;
   rename_session(sid: unknown, title: unknown): unknown;
   set_session_pinned(sid: unknown, pinned: unknown): unknown;
@@ -351,7 +353,7 @@ export interface StorageApi {
   /** 隔离副本的绑定（会话详情面，本段新增，见 `session_worktree`）。 */
   clear_session_worktree(sid: unknown): unknown;
   set_session_workspace(sid: unknown, path: unknown): unknown;
-  list_workspaces(opts: { always_include: unknown }): unknown;
+  list_workspaces(always_include?: unknown): unknown;
   upsert_workspace(path: unknown, opts?: { touch_opened?: boolean }): unknown;
   rename_workspace(path: unknown, name: unknown): unknown;
   set_workspace_pinned(path: unknown, pinned: unknown): unknown;
@@ -1702,15 +1704,11 @@ export class WebSocketHandler {
    * 而 slash-command 早退臂（1260/1266）是 **sessionId 在 payload 之前** —— 源里就是两套姿势，
    * 端口逐字保持（序列化后的帧字节面不同，见 §D6）。
    *
-   * S2-B1（本段最大的源 bug，逐字复刻不修）：1207 的 `if isinstance(refs, list) and refs:` 之后，
-   * 1214 那行 `ctx["approved_plan"] = context_extra["approved_plan"]` 被缩进进了 if 体（死支），
-   * 1215 又在 `if context_extra:` 层**无条件重复一次** ⇒ 任何不带 `approved_plan` 键的
-   * `context_extra` 都在 1215 抛 KeyError，而这一句在 1360 那三只 try **之前** ⇒
-   * 异常直接冒出 `_run_turn`（`_run_and_drain` 只有 finally）⇒ 回合从没跑过。
-   * `_handle_message` 的五个 `context_extra` 字面量里**只有 `approve_plan` 臂（1717）带这个键**
-   * （1596–1599 user_prompt / 1646–1654 consent / 1775–1782 answer / 1936–1938 resume 全无）
-   * ⇒ user_prompt / respond_permission / respond_question / resume_turn 四条臂全中招；
-   * `queue` 臂（1524）因为 `context_extra=None` 整块跳过反而活着。
+   * S2-B1：`ctx["approved_plan"]` 只在键存在时转发。早先的移植把它写成了 `if context_extra:`
+   * 层上的无条件下标（且 refs 分支里重复一次）⇒ 任何不带这个键的 `context_extra` 都抛
+   * KeyError，而这一句在三只 try **之前** ⇒ 异常直接冒出 `_run_turn`（`_run_and_drain` 只有
+   * finally）⇒ 回合从没跑过。`_handle_message` 的五个 `context_extra` 字面量里只有
+   * `approve_plan` 臂带这个键，其余四条臂（user_prompt / consent / answer / resume）全中招。
    */
   async _run_turn(
     ws: unknown,
@@ -1763,10 +1761,12 @@ export class WebSocketHandler {
       const refs = g(ce, "context_refs");
       if (Array.isArray(refs) && py_truth(refs)) {
         ctx["context_refs"] = refs;
-        /* S2-B1 死支（源 1214）：这一行被 1207 的 if 罩住，且与 1215 完全同式。 */
-        ctx["approved_plan"] = sub(ce, "approved_plan");
       }
-      ctx["approved_plan"] = sub(ce, "approved_plan"); // S2-B1：源 1215 无条件重复 ⇒ KeyError 抛点
+      /* 只有批方案那条臂会带这个键；无键下标会把最普通的用户输入也打成 KeyError。 */
+      const approved_plan = g(ce, "approved_plan");
+      if (approved_plan !== null) {
+        ctx["approved_plan"] = approved_plan;
+      }
       for (const key of ["consent_decision", "consent_call_id", "question_answer", "silent_consent"]) {
         if (g(ce, key) !== null) ctx[key] = g(ce, key);
       }
@@ -2137,10 +2137,10 @@ export class WebSocketHandler {
       /* 源 1570–1587：回合跑在后台 task 里（否则 interrupt/steer 会卡在缓冲区分不到帧）；
        * **按会话**一回合一只，第二只落进该会话的 UI 队列。 */
       if (this._turn_running(ws)) {
-        await q.ui_enqueue(message_text, {
-          requested: "send",
-          reason: "当前回合还在进行，这条已排队，回合结束后自动发送。",
-        });
+        await q.ui_enqueue(
+          message_text, false, "send",
+          "当前回合还在进行，这条已排队，回合结束后自动发送。",
+        );
         await this._broadcast_queue_state();
         return;
       }
@@ -2151,7 +2151,7 @@ export class WebSocketHandler {
         try {
           await this._run_turn(ws, message_text, {
             source: "user",
-            /* 源 1596–1599：**不带** `approved_plan` ⇒ 踩中 S2-B1 的 KeyError（见 `_run_turn` 头）。 */
+            /* 源 1596–1599：这里不带 `approved_plan`，见 `_run_turn` 头 S2-B1。 */
             context_extra: {
               permission: g(payload, "permission"),
               model: g(payload, "model"),
@@ -2219,8 +2219,7 @@ export class WebSocketHandler {
 
     } else if (event_type === "approve_plan") {
       /* 源 1666–1727：方案审批卡回执。批准 = 以批准时的权限档立即开执行轮（合同走
-       * `context_extra.approved_plan`，是**唯一**带这个键的臂 ⇒ 唯一不踩 S2-B1 的开轮路径）；
-       * 放弃 = 只归档 artifact，不发轮次。 */
+       * `context_extra.approved_plan`，是唯一带这个键的臂）；放弃 = 只归档 artifact，不发轮次。 */
       const plan_id = py_strip(py_str(py_or(g(payload, "plan_id"), "")));
       const decision = py_lower_str_or_empty(py_or(g(payload, "decision"), "approve"));
       if (decision !== "approve" && decision !== "discard") {
@@ -2349,15 +2348,14 @@ export class WebSocketHandler {
       const text = py_strip_or(g(payload, "text"));
       if (!py_truth(text)) return;
       if (!this._turn_running(ws)) {
-        await router.queue.ui_enqueue(text, {
-          urgent: true,
-          requested: "steer",
-          reason: "当前没有正在进行的回合可以打断，这条已插到队首，下一轮先发它。",
-        });
+        await router.queue.ui_enqueue(
+          text, true, "steer",
+          "当前没有正在进行的回合可以打断，这条已插到队首，下一轮先发它。",
+        );
         await this._broadcast_queue_state();
         return;
       }
-      await router.queue.send_message(text, this.seams.deliver_as_steer(), { sender: "user" });
+      await router.queue.send_message(text, this.seams.deliver_as_steer(), "user");
 
       /* S2-B7：`urgent_interrupt` 默认 True ⇒ 客户端传 JSON null 也算真（走 or 链），
        * 只有显式 false 且 `immediate` 不为真才不硬取消。 */
@@ -2387,7 +2385,7 @@ export class WebSocketHandler {
        * 入队用的仍是**未 strip 的原值**。 */
       const text = gd(payload, "text", "");
       if (py_truth(py_strip_method(text))) {
-        await q.ui_enqueue(text, { urgent: py_bool(g(payload, "urgent")) });
+        await q.ui_enqueue(text, py_bool(g(payload, "urgent")));
         await this._broadcast_queue_state();
         /* S2-B8：这只 task 不登记句柄 ⇒ `interrupt` 的 `_live_turn_tasks_for` 看不见它。 */
         if (!this._turn_running(ws) && !q.is_paused) {
@@ -2669,7 +2667,7 @@ export class WebSocketHandler {
       timestamp: this.seams.now(),
       sessionId: router.session_id,
       payload: {
-        workspaces: router.storage.list_workspaces({ always_include: active }),
+        workspaces: router.storage.list_workspaces(active as string | undefined),
         active,
       },
     };
@@ -2883,7 +2881,7 @@ export class WebSocketHandler {
 
   /** 源 2322–2375 `_history_messages`：DB 行 → 前端时间线形状（同步，且用**主** router 的 storage）。 */
   _history_messages(sid: unknown): JsonLike[] {
-    const rows = (this.router as RouterApi).storage.get_messages(sid, { limit: 1000 });   // S2-B17
+    const rows = (this.router as RouterApi).storage.get_messages(sid, 1000);   // S2-B17
     const out: JsonLike[] = [];
     for (const r of py_iter(rows)) {
       let meta: JsonLike;
