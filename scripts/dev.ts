@@ -50,9 +50,11 @@ async function start() {
 
   const devServerUrl = 'http://localhost:5174'
 
-  // 3. Launch Electron (cwd = app/ui so package.json main resolves correctly)
+  // 3. Launch Electron from the repo root: root package.json is the app
+  // manifest (`main: dist-electron/main.js`), and that main is the one built
+  // just above. Launching from app/ui resolved a stale copy instead.
   electronProcess = spawn(electronPath, ['.'], {
-    cwd: uiDir,
+    cwd: root,
     stdio: 'inherit',
     env: {
       ...process.env,

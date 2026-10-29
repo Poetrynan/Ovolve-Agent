@@ -2,10 +2,17 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   darkMode: ["class"],
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: {
+    // Resolve the globs against this file, not the process cwd. The root
+    // vite.config.ts sets `root: app/ui` but runs from the repo root, so a
+    // cwd-relative glob matched nothing and every `@apply` of a theme class
+    // (`border-border`) failed the build.
+    relative: true,
+    files: [
+      "./index.html",
+      "./src/**/*.{js,ts,jsx,tsx}",
+    ],
+  },
   theme: {
     extend: {
       colors: {

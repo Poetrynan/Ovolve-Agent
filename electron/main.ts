@@ -22,7 +22,11 @@ const appWindows = new Set<BrowserWindow>()
 let backendProcess: ChildProcess | null = null
 let isShuttingDown = false
 
+const backendPort = Number(process.env.OVOLVE_SERVER_PORT) || 8765
+process.env.OVOLVE_SERVER_PORT = String(backendPort)
+
 ipcMain.handle('app:getApiToken', () => API_TOKEN)
+ipcMain.handle('app:getBackendPort', () => backendPort)
 
 function findBackendScript(): string | null {
   const override = process.env.OVOLVE_BACKEND_PATH
@@ -90,6 +94,7 @@ function startNodeBackend(scriptPath: string): ChildProcess | null {
       env: {
         ...process.env,
         OVOLVE_API_TOKEN: API_TOKEN,
+        OVOLVE_SERVER_PORT: String(backendPort),
       },
     })
     child.stdout?.on('data', (d) => {
@@ -115,7 +120,7 @@ function waitForBackendReady(maxAttempts = 40, intervalMs = 250): Promise<boolea
     let attempts = 0
     const check = () => {
       attempts++
-      const req = http.get('http://127.0.0.1:8765/api/health', (res) => {
+      const req = http.get(`http://127.0.0.1:${backendPort}/api/health`, (res) => {
         if (res.statusCode === 200) resolve(true)
         else retry()
       })
@@ -136,7 +141,7 @@ function waitForBackendReady(maxAttempts = 40, intervalMs = 250): Promise<boolea
 function verifyBackendIdentity(): Promise<'ok' | 'foreign' | 'unreachable'> {
   return new Promise((resolve) => {
     const req = http.get(
-      { host: '127.0.0.1', port: 8765, path: '/api/evolution/mode', headers: { 'X-Api-Token': API_TOKEN } },
+      { host: '127.0.0.1', port: backendPort, path: '/api/evolution/mode', headers: { 'X-Api-Token': API_TOKEN } },
       (res) => {
         res.resume()
         resolve(res.statusCode === 401 ? 'foreign' : 'ok')
@@ -378,7 +383,7 @@ if (!gotTheLock) {
     await waitForBackendReady()
     const identity = await verifyBackendIdentity()
     if (identity === 'foreign') {
-      console.error('[electron] Port 8765 is held by a foreign backend with mismatched API token')
+      console.error(`[electron] Port ${backendPort} is held by a foreign backend with mismatched API token`)
     }
 
     createWindow()
