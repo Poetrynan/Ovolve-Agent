@@ -306,6 +306,8 @@
   },
   "sidebar": {
     "forkedSession": "此对话由另一对话分支而来",
+    "isolatedSession": "隔离工作区",
+    "isolatedBase": "基线",
     "nav": {
       "chat": "对话",
       "goals": "目标",

@@ -215,13 +215,23 @@ export const useSessionListStore = create<SessionListState>((set, get) => ({
   // compares canonical-to-canonical. Without this, a backend that reports the
   // active folder as `'.'` would never match the merged `''` group key and the
   // sidebar would highlight nothing as active.
-  applyList: (sessions, activeId, activeWorkspace) => set({
-    sessions,
-    activeId,
-    ...(activeWorkspace !== undefined
-      ? { activeWorkspace: canonicalWorkspace(activeWorkspace) }
-      : {}),
-  }),
+  applyList: (sessions, activeId, activeWorkspace) => {
+    const prev = get().activeId
+    set({
+      sessions,
+      activeId,
+      ...(activeWorkspace !== undefined
+        ? { activeWorkspace: canonicalWorkspace(activeWorkspace) }
+        : {}),
+    })
+    // The first list after boot also counts as a switch: it is the first time we
+    // know which conversation is on screen, and its checkout decides everything
+    // the scope chips show.
+    if (activeId !== prev) {
+      set({ worktree: null })
+      if (activeId) get().requestWorktreeStatus()
+    }
+  },
   applyWorkspaces: (workspaces, active) => set({
     workspaces,
     activeWorkspace: canonicalWorkspace(active),
@@ -497,11 +507,17 @@ function labelFor(workspace: string): string {
 // The copy belongs to the conversation, not to the window: on every switch the
 // previous one's status goes in the same tick, or a plain chat shows a 副本
 // badge until the next reply lands.
-let __wtLastSid = useAgentStore.getState().sessionId
-useAgentStore.subscribe((state) => {
-  if (state.sessionId === __wtLastSid) return
-  __wtLastSid = state.sessionId
-  settleWorktreeRequest({ action: 'merge', ok: false, error: '' })
-  useSessionListStore.setState({ worktree: null })
-  if (state.sessionId) useSessionListStore.getState().requestWorktreeStatus()
+//
+// Deferred one microtask: agentStore imports this module, so reading or
+// subscribing to it at module scope hits its TDZ under native ESM (dev server)
+// and takes the whole app down before the first render.
+queueMicrotask(() => {
+  let lastSid = useAgentStore.getState().sessionId
+  useAgentStore.subscribe((state) => {
+    if (state.sessionId === lastSid) return
+    lastSid = state.sessionId
+    settleWorktreeRequest({ action: 'merge', ok: false, error: '' })
+    useSessionListStore.setState({ worktree: null })
+    if (state.sessionId) useSessionListStore.getState().requestWorktreeStatus()
+  })
 })

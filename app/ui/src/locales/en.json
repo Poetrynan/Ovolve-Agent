@@ -44,6 +44,8 @@
   },
   "sidebar": {
     "forkedSession": "Branched off another conversation",
+    "isolatedSession": "Isolated workspace",
+    "isolatedBase": "Baseline",
     "nav": {
       "chat": "Chat",
       "goals": "Goals",

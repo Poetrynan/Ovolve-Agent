@@ -5,11 +5,11 @@
 //     picker, which is where the eye already is when the prompt is written.
 //   • 'hero'     — the project tray under an empty-state composer.
 //   • 'header'   — the docked pill in the chat header.
-import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   FolderGit2, GitBranch, ChevronDown, ChevronRight, Search, Check, Plus, GitGraph,
-  ArrowRight, FolderPlus, X, Copy, GitMerge, Trash2, Loader2,
+  ArrowRight, FolderPlus, Folder, GitFork, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@lib/utils'
@@ -47,11 +47,8 @@ export function SessionTripartiteCapsule({
   const openTab = useSidePanelStore((s) => s.openTab)
   const sessionList = useSessionListStore((s) => s.sessions)
   const newSession = useSessionListStore((s) => s.newSession)
+  const activeSession = useSessionListStore((s) => s.sessions.find((x) => x.id === s.activeId) || null)
   const worktree = useSessionListStore((s) => s.worktree)
-  const worktreeBusy = useSessionListStore((s) => s.worktreeBusy)
-  const requestWorktreeStatus = useSessionListStore((s) => s.requestWorktreeStatus)
-  const mergeWorktree = useSessionListStore((s) => s.mergeWorktree)
-  const removeWorktree = useSessionListStore((s) => s.removeWorktree)
 
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState('')
@@ -60,8 +57,7 @@ export function SessionTripartiteCapsule({
   const [isCreating, setIsCreating] = useState(false)
   const [newBranchInput, setNewBranchInput] = useState('')
   const [switching, setSwitching] = useState(false)
-  const [copyOpen, setCopyOpen] = useState(false)
-  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [modeOpen, setModeOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isHero = variant === 'hero'
@@ -99,13 +95,29 @@ export function SessionTripartiteCapsule({
     : '进入项目工作'
   const branchName = gitStatus?.branch || ''
   const changedCount = gitStatus?.changes?.length || 0
-  const showGitBranch = hasProject && Boolean(gitStatus?.isGitRepository && branchName)
+  const isRepo = Boolean(gitStatus?.isGitRepository)
+  const showGitBranch = hasProject && Boolean(isRepo && branchName)
   // A conversation that owns a copy reports the copy's branch as its own, so
-  // the chip above already names it; the badge says the branch is disposable.
+  // the branch chip already names it; the badge says the branch is disposable.
   const inCopy = Boolean(worktree?.isWorktree)
-  const copyBase = worktree?.base || ''
-  const copyMerged = Boolean(worktree?.merged)
-  const copyMissing = worktree?.exists === false
+  // A conversation that already answered cannot change where it edits.
+  const conversationStarted = (activeSession?.message_count ?? 0) > 0
+  const modeLocked = conversationStarted || inCopy
+  // The mode is picked where a new conversation starts, and shown once it is one.
+  const showMode = hasProject && isRepo && !isComposer && (isHero || inCopy)
+  // The branches a fresh isolated conversation can start from.
+  const baseChoices = useMemo(() => {
+    const out: string[] = []
+    for (const b of [branchName, ...branches]) {
+      if (b && !out.includes(b)) out.push(b)
+    }
+    return out
+  }, [branchName, branches])
+
+  const startIsolated = (base: string) => {
+    setModeOpen(false)
+    newSession({ executionMode: 'worktree', startingPoint: base && base !== branchName ? base : '' })
+  }
 
   // Gather unique workspaces
   const allWorkspaces = useMemo(() => {
@@ -197,59 +209,6 @@ export function SessionTripartiteCapsule({
       setSwitching(false)
     }
   }
-
-  const handleStartInCopy = () => {
-    if (!hasProject) {
-      toast.error('先选择一个项目，再创建副本')
-      return
-    }
-    if (!showGitBranch) {
-      toast.error('当前项目不是 Git 仓库，无法创建副本')
-      return
-    }
-    if (inCopy) {
-      toast.error('这条对话已经在副本里了')
-      return
-    }
-    setWorkspaceOpen(false)
-    // Fork from the branch the project is on right now, so the copy starts
-    // exactly where the user is standing.
-    newSession({ executionMode: 'worktree', startingPoint: branchName })
-  }
-
-  const handleMergeCopy = async () => {
-    const r = await mergeWorktree(copyBase || undefined)
-    if (!r.ok) {
-      if (r.error) toast.error(r.error)
-      return
-    }
-    toast.success(`已合并进 ${r.target || copyBase}`)
-    void refreshGit()
-  }
-
-  const handleRemoveCopy = async () => {
-    // Deleting a folder is one click away from a glance — ask first, inline.
-    if (!confirmRemove) {
-      setConfirmRemove(true)
-      return
-    }
-    setConfirmRemove(false)
-    const r = await removeWorktree()
-    if (!r.ok) {
-      if (r.error) toast.error(r.error)
-      return
-    }
-    if (r.preserved) toast.warning('副本目录没能安全删除，已原样保留在磁盘上')
-    else toast.success('副本已移除')
-    void refreshGit()
-  }
-
-  const metaRow = (label: string, value: ReactNode) => (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className="truncate text-foreground/90 font-medium">{value}</span>
-    </div>
-  )
 
   const projectChipClass = isHero
     ? 'h-7 px-2.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-foreground/5'
@@ -370,28 +329,6 @@ export function SessionTripartiteCapsule({
                 <span className="flex-1 text-left">添加新项目</span>
                 <ChevronRight size={13} className="text-muted-foreground/60 shrink-0" />
               </button>
-              {/* aria-disabled rather than disabled: a dead row that swallows the
-                  click explains nothing. This one answers why it can't. */}
-              <button
-                type="button"
-                aria-disabled={!showGitBranch || inCopy}
-                onClick={handleStartInCopy}
-                title={
-                  !hasProject ? '先选择一个项目'
-                    : !showGitBranch ? '当前项目不是 Git 仓库'
-                    : inCopy ? '这条对话已经在副本里' : '在新副本里开始一段对话'
-                }
-                className={cn(
-                  'w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-[13px] transition-colors cursor-pointer',
-                  !showGitBranch || inCopy
-                    ? 'text-muted-foreground/60'
-                    : 'text-foreground/90 hover:bg-accent/60',
-                )}
-              >
-                <Copy size={15} className="text-muted-foreground shrink-0" />
-                <span className="flex-1 text-left">在独立副本中开始</span>
-                <ChevronRight size={13} className="text-muted-foreground/60 shrink-0" />
-              </button>
               <button
                 type="button"
                 onClick={handleClearWorkspace}
@@ -433,10 +370,22 @@ export function SessionTripartiteCapsule({
                   'inline-flex items-center gap-1.5 font-medium transition-colors press-feedback cursor-pointer group',
                   branchChipClass,
                 )}
-                title={`当前分支：${branchName}`}
+                title={
+                  inCopy
+                    ? '这个对话在独立副本里，改动不落在项目目录'
+                    : `当前分支：${branchName}`
+                }
               >
                 <GitBranch size={isHero || isComposer ? 13 : 11} className="text-muted-foreground group-hover:text-foreground shrink-0" />
                 <span className={cn('truncate', isComposer ? 'max-w-[110px] min-w-0' : 'max-w-[130px]')}>{branchName}</span>
+                {inCopy && (
+                  <span
+                    className="shrink-0 rounded-full border border-border/70 bg-muted/60 px-1.5 py-px text-[10px] text-muted-foreground"
+                    title="这个对话在独立副本里，改动不落在项目目录"
+                  >
+                    副本
+                  </span>
+                )}
                 {changedCount > 0 && (
                   <span
                     className="px-1 py-0.1 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0"
@@ -581,110 +530,108 @@ export function SessionTripartiteCapsule({
         </>
       )}
 
-      {/* 3. Isolated copy — this conversation edits its own checkout, and the
-          branch chip above is already the copy's branch. The badge is where
-          that branch gets merged back or thrown away. */}
-      {inCopy && (
+      {/* 3. Execution Mode: where this conversation edits */}
+      {showMode && (
         <>
-          {!isHero && !isComposer && <div className="w-[1px] h-3 bg-border/80 shrink-0" />}
-          <Popover
-            open={copyOpen}
-            onOpenChange={(v) => {
-              setCopyOpen(v)
-              setConfirmRemove(false)
-              if (v) requestWorktreeStatus()
-            }}
-          >
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  'inline-flex items-center gap-1.5 font-medium transition-colors press-feedback cursor-pointer',
-                  isComposer
-                    ? 'h-7 px-2 rounded-xl text-xs text-foreground/70 hover:text-foreground hover:bg-foreground/5 shrink-0'
-                    : branchChipClass,
-                )}
-                title="这条对话在项目的独立副本里工作"
-              >
-                <Copy size={isHero || isComposer ? 12 : 10} className="shrink-0 opacity-70" />
-                <span>副本</span>
-              </button>
-            </PopoverTrigger>
-
-            <PopoverContent
-              align="start"
-              side={isHero || isComposer ? 'top' : 'bottom'}
-              sideOffset={6}
-              className="w-[300px] p-3 shadow-xl rounded-2xl border border-border/80 bg-popover z-50"
+          {!isHero && <div className="w-[1px] h-3 bg-border/80 shrink-0" />}
+          {modeLocked ? (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 font-medium select-none text-muted-foreground',
+                isHero ? 'h-7 px-2.5 rounded-lg text-xs' : 'h-6 px-2.5 rounded-full text-xs',
+              )}
+              title={
+                inCopy
+                  ? '这个对话在独立副本里，改动不落在项目目录'
+                  : '这个对话直接改项目目录；要开独立副本，请新建一个对话'
+              }
             >
-              <div className="flex items-center gap-2">
-                <Copy size={14} className="text-muted-foreground shrink-0" />
-                <span className="text-[13px] font-semibold">项目副本</span>
-                {copyMissing && (
-                  <span className="ml-auto text-[10px] text-destructive">目录已不在磁盘上</span>
-                )}
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
-                这条对话改的是项目的一份副本，主目录不受影响。
-              </p>
-
-              <div className="mt-2.5 space-y-1.5 text-[11px]">
-                {metaRow('分支', <span className="font-mono">{worktree?.branch || '—'}</span>)}
-                {metaRow('基于', <span className="font-mono">{copyBase || '—'}{worktree?.baseIsBranch === false ? '（提交）' : ''}</span>)}
-                {metaRow('提交', copyMerged ? '已合并' : `领先 ${worktree?.ahead ?? 0} · 落后 ${worktree?.behind ?? 0}`)}
-                {metaRow('工作区', worktree?.dirty ? `${worktree.dirtyCount ?? 0} 个文件未提交` : '干净')}
-                {metaRow('位置', <span className="font-mono text-[10px]">{worktree?.path || '—'}</span>)}
-              </div>
-
-              {worktree?.inProgress && (
-                <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
-                  主项目里还有一次没做完的{worktree.operation || '操作'}，合并前要先把{worktree.operation ? '它' : '那次操作'}处理完。
-                </div>
+              {inCopy ? (
+                <GitFork size={isHero ? 13 : 11} className="shrink-0" />
+              ) : (
+                <Folder size={isHero ? 13 : 11} className="shrink-0" />
               )}
-              {worktree?.repoDirty && !worktree?.inProgress && (
-                <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
-                  主项目有未提交的改动，提交或撤销后才能合并。
-                </div>
-              )}
-
-              <div className="mt-3 flex items-center gap-2">
+              <span>{inCopy ? '独立副本' : '当前项目'}</span>
+            </span>
+          ) : (
+            <Popover
+              open={modeOpen}
+              onOpenChange={(v) => {
+                setModeOpen(v)
+                if (v) void refreshGit()
+              }}
+            >
+              <PopoverTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => void handleMergeCopy()}
-                  disabled={
-                    worktreeBusy || copyMissing || copyMerged || Boolean(worktree?.inProgress)
-                    || Boolean(worktree?.repoDirty) || worktree?.baseIsBranch === false
-                  }
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 h-7 rounded-lg text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  {worktreeBusy ? <Loader2 size={12} className="animate-spin" /> : <GitMerge size={12} />}
-                  {copyMerged
-                    ? '已合并'
-                    : worktree?.baseIsBranch === false
-                      ? '起点不是分支'
-                      : `合并回 ${copyBase || '主分支'}`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleRemoveCopy()}
-                  disabled={worktreeBusy}
                   className={cn(
-                    'inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                    confirmRemove
-                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                      : 'text-muted-foreground hover:text-destructive hover:bg-destructive/10',
+                    'inline-flex items-center gap-1.5 font-medium transition-colors press-feedback cursor-pointer group',
+                    isHero
+                      ? 'h-7 px-2.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-foreground/5'
+                      : 'h-6 px-2.5 rounded-full text-xs text-foreground/80 hover:text-foreground hover:bg-background/80',
                   )}
-                  onBlur={() => setConfirmRemove(false)}
+                  title="选这个对话在哪里改"
                 >
-                  <Trash2 size={12} />
-                  {confirmRemove ? '确认移除' : '移除副本'}
+                  <Folder size={isHero ? 13 : 11} className="text-muted-foreground group-hover:text-foreground shrink-0" />
+                  <span>当前项目</span>
+                  <ChevronDown size={isHero ? 12 : 10} className="opacity-55 group-hover:opacity-100 shrink-0" />
                 </button>
-              </div>
-              <p className="mt-1.5 text-[10px] text-muted-foreground/70 leading-relaxed">
-                移除只删掉这份副本；没合并的提交仍留在 {worktree?.branch || '副本分支'} 上。
-              </p>
-            </PopoverContent>
-          </Popover>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                side={isHero ? 'top' : 'bottom'}
+                sideOffset={6}
+                className="w-[264px] p-1.5 shadow-xl rounded-2xl border border-border/80 bg-popover z-50"
+              >
+                <div className="px-2.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                  在哪里改
+                </div>
+                <div className="flex items-start gap-2.5 px-2.5 py-1.5 rounded-xl bg-accent/60">
+                  <Folder size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <div className="text-[13px] text-foreground">当前项目</div>
+                    <div className="text-[10px] leading-tight text-muted-foreground mt-0.5">
+                      改动直接落在项目目录里
+                    </div>
+                  </div>
+                  <Check size={14} className="ml-auto shrink-0 text-foreground" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => startIsolated(baseChoices[0] || branchName)}
+                  className="w-full flex items-start gap-2.5 px-2.5 py-1.5 rounded-xl text-left hover:bg-accent/60 transition-colors cursor-pointer"
+                >
+                  <GitFork size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] text-foreground/90">独立副本</div>
+                    <div className="text-[10px] leading-tight text-muted-foreground mt-0.5">
+                      独立分支 + 独立目录，多个任务并行互不打扰
+                    </div>
+                  </div>
+                </button>
+                <div className="h-px bg-border/50 my-1 mx-1" />
+                <div className="px-2.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                  从哪个分支起
+                </div>
+                <div className="max-h-[140px] overflow-y-auto space-y-0.5">
+                  {baseChoices.map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => startIsolated(b)}
+                      className="w-full flex items-center gap-2 px-2 py-1 rounded-lg text-[12px] text-foreground/90 hover:bg-accent/70 text-left cursor-pointer"
+                    >
+                      <GitBranch size={12} className="shrink-0 text-muted-foreground" />
+                      <span className="truncate">{b}</span>
+                      {b === branchName && (
+                        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">当前</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
         </>
       )}
     </div>

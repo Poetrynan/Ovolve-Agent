@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   Target, Settings,
   Plus, Search, Pin, PinOff, Pencil, Trash2, Check, X, MoreHorizontal,
-  Folder, FolderOpen, ChevronRight, FolderPlus, GitBranch, Copy,
+  Folder, FolderOpen, ChevronRight, FolderPlus, GitBranch, GitFork, Copy,
   ExternalLink, EyeOff, Timer, Bot, Blocks, BarChart3, Sparkles, Inbox,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -676,10 +676,16 @@ function SessionRow({ session, active, onSwitch, onRename, onDelete, onTogglePin
       {session.worktree_path ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Copy size={11} className="shrink-0 text-primary/70" />
+            <GitFork size={11} className="shrink-0 text-primary/80" />
           </TooltipTrigger>
           <TooltipContent side="right">
-            <p>{session.worktree_branch ? `项目副本 · ${session.worktree_branch}` : '项目副本'}</p>
+            <p>{t('sidebar.isolatedSession', '隔离工作区')}</p>
+            <p className="font-mono text-[11px]">{session.worktree_branch}</p>
+            {session.worktree_base ? (
+              <p className="text-muted-foreground text-[11px]">
+                {t('sidebar.isolatedBase', '基线')} {session.worktree_base}
+              </p>
+            ) : null}
           </TooltipContent>
         </Tooltip>
       ) : null}

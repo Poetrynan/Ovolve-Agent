@@ -3,16 +3,20 @@ import {
   CheckCircle2,
   ChevronRight,
   GitBranch,
+  GitFork,
+  GitMerge,
   ListTodo,
   Bot,
   Upload,
   Layers,
   Network,
+  X,
 } from 'lucide-react'
 import { OvolveLoader } from '@/components/ui/OvolveLoader'
 import { useTranslation } from 'react-i18next'
 import { useAgentStore } from '@store/agentStore'
 import { useGitStore } from '@store/gitStore'
+import { useSessionListStore } from '@store/sessionListStore'
 import {
   AGENT_LABELS,
   DOMAIN_SUBTITLES,
@@ -231,7 +235,16 @@ export function AgentDirectoryPanel({ open, onToggle: _onToggle }: AgentDirector
   const { t } = useTranslation()
   const { toolCalls: liveToolCalls, isWorking, reasoning: liveReasoning, messages, sendMessage, subagents = [] } = useAgentStore()
   const { status, refresh } = useGitStore()
+  const worktree = useSessionListStore((s) => s.worktree)
+  const worktreeBusy = useSessionListStore((s) => s.worktreeBusy)
+  const requestWorktreeStatus = useSessionListStore((s) => s.requestWorktreeStatus)
+  const mergeWorktree = useSessionListStore((s) => s.mergeWorktree)
+  const removeWorktree = useSessionListStore((s) => s.removeWorktree)
   const [processExpanded, setProcessExpanded] = useState(true)
+  const [worktreeMsg, setWorktreeMsg] = useState<
+    { kind: 'ok' | 'err'; text: string; files?: string[] } | null
+  >(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   // Agent 改文件期间 git 状态一直在变，只在打开时刷一次的话，
   // "更改 N" 这个数字会冻结在打开那一刻。10s 轮询 + 窗口回焦即刷。
@@ -245,6 +258,12 @@ export function AgentDirectoryPanel({ open, onToggle: _onToggle }: AgentDirector
       window.removeEventListener('focus', onFocus)
     }
   }, [refresh])
+
+  // The isolation card is a live view of another directory; re-read it whenever
+  // the rail is opened instead of trusting whatever was on screen last time.
+  useEffect(() => {
+    if (open) requestWorktreeStatus()
+  }, [open, requestWorktreeStatus])
 
   const latestAssistantWithActivity = useMemo(() => {
     return [...messages].reverse().find(
@@ -289,6 +308,56 @@ export function AgentDirectoryPanel({ open, onToggle: _onToggle }: AgentDirector
     sendMessage('请帮我把当前的所有工作区改动提交并推送到远端仓库。')
   }
 
+  // Isolation only exists while the conversation's own working tree exists; a
+  // directory removed outside the app must not leave a live "merge back" button
+  // pointing at a branch nobody can see any more.
+  const isolated = Boolean(worktree?.isWorktree && worktree.exists !== false)
+  const isolatedDirty = worktree?.dirtyCount ?? 0
+  const isolatedAhead = worktree?.ahead ?? 0
+  const isolatedBehind = worktree?.behind ?? 0
+
+  // Merging happens in the project folder, so it needs that folder free and on
+  // the base branch. Saying why the click would fail beats letting it fail.
+  const mergeHint = !isolated || isolatedAhead === 0
+    ? ''
+    : worktree?.inProgress
+      ? `主项目里有一次未完成的${worktree.operation || '操作'}，处理完它才能合并`
+      : worktree?.baseIsBranch && worktree.repoBranch !== worktree.base
+        ? `主项目当前在 ${worktree.repoBranch || '游离 HEAD'}，切回 ${worktree.base} 后即可合并`
+        : worktree?.repoDirty
+          ? '主项目有未提交改动，先提交或撤销后即可合并'
+          : ''
+
+  const onMergeWorktree = async () => {
+    setWorktreeMsg(null)
+    const r = await mergeWorktree(worktree?.base || undefined)
+    if (!r.ok) {
+      setWorktreeMsg({ kind: 'err', text: r.error || '合并失败', files: r.conflictFiles })
+      return
+    }
+    setWorktreeMsg({ kind: 'ok', text: `已合并回 ${r.target || worktree?.base || ''}` })
+    void refresh()
+  }
+
+  const onDisposeWorktree = async () => {
+    setWorktreeMsg(null)
+    const r = await removeWorktree()
+    if (!r.ok) {
+      setWorktreeMsg({ kind: 'err', text: r.error || '移除失败' })
+      return
+    }
+    setConfirmRemove(false)
+    setWorktreeMsg({
+      kind: 'ok',
+      text: r.preserved
+        ? '隔离目录没能安全删除，已原样保留在磁盘上'
+        : r.keptBranch
+          ? `隔离工作区已移除，未合并的分支保留为 ${worktree?.branch || ''}`
+          : '隔离工作区已移除，改动已合入项目',
+    })
+    void refresh()
+  }
+
   if (!open) return null
 
   return (
@@ -315,8 +384,131 @@ export function AgentDirectoryPanel({ open, onToggle: _onToggle }: AgentDirector
                 <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs font-medium">{t('agentDir.gitTools', 'Git 工具')}</span>
               </div>
-              <BranchPicker />
+              {/* In an isolated tree the branch is the isolation itself: switching
+                  it there would move the session branch under the conversation, so
+                  the picker only makes sense on the project folder. */}
+              {worktree?.isWorktree ? null : <BranchPicker />}
             </div>
+
+            {worktree?.isWorktree && (
+              <div className="rounded-lg border border-primary/25 bg-primary/[0.05] p-2 space-y-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <GitFork className="h-3 w-3 text-primary shrink-0" />
+                  <span className="text-[11px] font-medium shrink-0">隔离工作区</span>
+                  <span
+                    className="text-[11px] font-mono text-muted-foreground min-w-0 truncate"
+                    title={worktree.path}
+                  >
+                    {worktree.branch}
+                  </span>
+                  {isolated && (isolatedAhead > 0 || isolatedBehind > 0) && (
+                    <span className="ml-auto text-[10px] font-mono tabular-nums text-muted-foreground shrink-0">
+                      {isolatedAhead > 0 && <span className="text-success">↑{isolatedAhead}</span>}
+                      {isolatedBehind > 0 && <span className="ml-1 text-warning">↓{isolatedBehind}</span>}
+                    </span>
+                  )}
+                </div>
+
+                {isolated ? (
+                  <>
+                    <p className="text-[10px] text-muted-foreground leading-snug">
+                      基线{' '}
+                      <span className="font-mono">
+                        {worktree?.baseIsBranch ? worktree.base : (worktree?.base || '').slice(0, 8)}
+                      </span>
+                      {isolatedDirty > 0 ? (
+                        <span className="text-warning"> · 未提交改动 {isolatedDirty}</span>
+                      ) : null}
+                    </p>
+                    {mergeHint && (
+                      <p className="text-[10px] text-warning/90 leading-snug">{mergeHint}</p>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => { void onMergeWorktree() }}
+                        disabled={isolatedAhead === 0 || mergeHint !== '' || worktreeBusy}
+                        className={cn(
+                          'text-[11px] px-2 py-1 rounded-md transition-colors flex items-center gap-1 min-w-0',
+                          isolatedAhead > 0 && mergeHint === '' && !worktreeBusy
+                            ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs cursor-pointer'
+                            : 'bg-muted text-muted-foreground cursor-not-allowed opacity-50',
+                        )}
+                      >
+                        <GitMerge className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
+                          {isolatedAhead > 0 ? `合并回 ${worktree?.base || ''}` : '已与基线一致'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { if (confirmRemove) void onDisposeWorktree(); else setConfirmRemove(true) }}
+                        onBlur={() => setConfirmRemove(false)}
+                        disabled={worktreeBusy}
+                        className={cn(
+                          'text-[11px] px-2 py-1 rounded-md transition-colors flex items-center gap-1 shrink-0',
+                          confirmRemove
+                            ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 cursor-pointer'
+                            : 'bg-muted text-muted-foreground hover:bg-muted/70 cursor-pointer',
+                          worktreeBusy && 'opacity-50 cursor-not-allowed',
+                        )}
+                      >
+                        <X className="h-3 w-3" />
+                        {confirmRemove ? '确认移除' : '移除隔离'}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[10px] text-muted-foreground leading-snug">
+                      隔离目录已不存在，改动仍保存在分支上。
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { void onDisposeWorktree() }}
+                      disabled={worktreeBusy}
+                      className="text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground hover:bg-muted/70 transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <X className="h-3 w-3" />
+                      回到项目目录
+                    </button>
+                  </>
+                )}
+
+                {worktreeMsg && (
+                  <div className="space-y-1">
+                    <p
+                      className={cn(
+                        'text-[10px] leading-snug',
+                        worktreeMsg.kind === 'ok' ? 'text-success' : 'text-destructive',
+                      )}
+                    >
+                      {worktreeMsg.text}
+                    </p>
+                    {/* A clash is actionable only if the files are named; the
+                        prose says how many, these say which. */}
+                    {worktreeMsg.files && worktreeMsg.files.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {worktreeMsg.files.slice(0, 8).map((f) => (
+                          <span
+                            key={f}
+                            className="max-w-full truncate rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-mono text-destructive"
+                            title={f}
+                          >
+                            {f}
+                          </span>
+                        ))}
+                        {worktreeMsg.files.length > 8 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            +{worktreeMsg.files.length - 8}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-xs pt-1 border-t border-border/20">
               <div className="flex items-center gap-2">

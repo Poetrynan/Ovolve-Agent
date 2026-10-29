@@ -205,6 +205,16 @@ export default function ChatPage({
     void refreshGit()
   }, [refreshGit])
 
+  // The scope follows the conversation: a switch can land in another checkout
+  // (an isolated copy), so the git snapshot and the copy card are re-read then,
+  // not only on mount.
+  const requestWorktreeStatus = useSessionListStore(s => s.requestWorktreeStatus)
+  useEffect(() => {
+    if (!sessionId) return
+    void refreshGit()
+    requestWorktreeStatus()
+  }, [sessionId, refreshGit, requestWorktreeStatus])
+
 
   // Refresh git snapshot when a tool finishes (writes / git ops change the tree).
   // Depends on the COUNT of settled tools, not the toolCalls array itself: the
