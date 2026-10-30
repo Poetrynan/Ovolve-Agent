@@ -28,6 +28,7 @@ import {
   MutableHeaders,
   JsonDict,
   PyKeyError,
+  ServerApp,
 } from "./http_server_keys.js";
 
 import {
@@ -45,6 +46,7 @@ import { auth_middleware } from "../api_auth.js";
 
 import { WebSocketHandler } from "./http_server_s1.js";
 import { createProductionSeams, NATIVE_WS_CHANNEL } from "./http_server_runtime.js";
+import { wireS5S6Seams } from "./seams_s5_s6.js";
 
 import {
   handle_health,
@@ -1046,7 +1048,8 @@ export async function run_server(
   sessionHost.rotate_generation();
   set_session_host(sessionHost);
 
-  // Wire module seams for S7-S9 routes
+  // Wire module seams for S5-S9 routes
+  await wireS5S6Seams();
   await wireDefaultSeams(sessionHost);
 
   // Store in AppState

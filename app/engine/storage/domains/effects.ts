@@ -895,12 +895,22 @@ export function applyEffectsDomain(klass: typeof StorageBase): void {
     return rows.map((r) => ({ ...(r as Row) }) as JsonDict);
   };
 
+  /** 第一参兼容 number（limit）与 options 对象（http_server 的 {limit, days} kwargs 口径）。 */
   proto.usage_recent_turns = function (
     this: StorageBase & EffectsDomainI,
-    limit = 30,
-    days = 30
+    limit_or_opts: number | { limit?: number; days?: number } = 30,
+    daysArg?: number
   ): JsonDict[] {
     const self = this;
+    let limit = 30;
+    let days = 30;
+    if (limit_or_opts !== null && typeof limit_or_opts === "object") {
+      limit = limit_or_opts.limit ?? 30;
+      days = limit_or_opts.days ?? 30;
+    } else {
+      limit = Number(limit_or_opts);
+      if (daysArg !== undefined) days = daysArg;
+    }
     // The NEWEST turns in the window, newest first.
     const since = intSeconds() - days * 86400;
     const rows = self

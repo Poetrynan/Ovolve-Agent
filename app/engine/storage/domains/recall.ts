@@ -68,7 +68,11 @@ export interface RecallDomainI {
   get_workspace_recent_synthesis(workspace: string, exclude_session?: string, limit?: number): JsonDict[];
   _session_fts_upsert(session_id: string, message_id: string, content: string): void;
   rebuild_session_fts(): number;
-  search_sessions_fts(query: string, workspace?: string, limit?: number): JsonDict[];
+  search_sessions_fts(
+    query: string,
+    workspace_or_opts?: string | { workspace?: string; limit?: number },
+    limit?: number
+  ): JsonDict[];
   update_memory_dream_time(root: string): void;
   search_memory(root: string, limit?: number): JsonDict[];
   update_memory_index(root: string, content: string): void;
@@ -81,20 +85,31 @@ export interface RecallDomainI {
     episode_id?: string
   ): string;
   get_episode(episode_id: string): JsonDict | null;
-  get_active_episode(session_id: string, branch_id?: string): JsonDict | null;
+  get_active_episode(
+    session_id_or_opts: string | { session_id?: string; branch_id?: string },
+    branch_id?: string
+  ): JsonDict | null;
   seal_episode(
     episode_id: string,
     reason?: string,
     event_id?: string,
     metadata?: JsonDict | null
   ): boolean;
-  list_episodes(session_id?: string, branch_id?: string | null, limit?: number): JsonDict[];
+  list_episodes(
+    session_id_or_opts?:
+      | string
+      | { session_id?: string; branch_id?: string | null; limit?: number },
+    branch_id?: string | null,
+    limit?: number
+  ): JsonDict[];
   list_active_episodes(limit?: number): JsonDict[];
   append_turn_to_episode(episode_id: string, turn_id: string): boolean;
   insert_learning_item(kwargs: Record<string, unknown>): string;
   get_learning_item(item_id: string): JsonDict | null;
   list_learning_items(
-    session_id?: string,
+    session_id_or_opts?:
+      | string
+      | { session_id?: string; branch_id?: string | null; limit?: number },
     branch_id?: string | null,
     episode_id?: string,
     bundle_id?: string,
@@ -997,9 +1012,16 @@ export function applyRecallDomain(klass: typeof StorageBase): void {
   proto.search_sessions_fts = function (
     this: StorageBase & RecallDomainI,
     query: string,
-    workspace = "",
+    workspace_or_opts: string | { workspace?: string; limit?: number } = "",
     limit = 10
   ): JsonDict[] {
+    let workspace = "";
+    if (workspace_or_opts !== null && typeof workspace_or_opts === "object") {
+      workspace = String(workspace_or_opts.workspace ?? "");
+      limit = Number(workspace_or_opts.limit ?? 10);
+    } else {
+      workspace = workspace_or_opts;
+    }
     const self = this;
     if (!self.session_fts_enabled || !query) return [];
     let match_q: string;
@@ -1153,9 +1175,16 @@ export function applyRecallDomain(klass: typeof StorageBase): void {
 
   proto.get_active_episode = function (
     this: StorageBase & RecallDomainI,
-    session_id: string,
+    session_id_or_opts: string | { session_id?: string; branch_id?: string } = "",
     branch_id = ""
   ): JsonDict | null {
+    let session_id = "";
+    if (session_id_or_opts !== null && typeof session_id_or_opts === "object") {
+      session_id = String(session_id_or_opts.session_id ?? "");
+      branch_id = String(session_id_or_opts.branch_id ?? "");
+    } else {
+      session_id = session_id_or_opts;
+    }
     const self = this;
     if (!session_id) return null;
     const c = self._db("sessions");
@@ -1226,10 +1255,20 @@ export function applyRecallDomain(klass: typeof StorageBase): void {
 
   proto.list_episodes = function (
     this: StorageBase & RecallDomainI,
-    session_id = "",
+    session_id_or_opts:
+      | string
+      | { session_id?: string; branch_id?: string | null; limit?: number } = "",
     branch_id: string | null = null,
     limit = 50
   ): JsonDict[] {
+    let session_id = "";
+    if (session_id_or_opts !== null && typeof session_id_or_opts === "object") {
+      session_id = String(session_id_or_opts.session_id ?? "");
+      branch_id = session_id_or_opts.branch_id ?? null;
+      limit = Number(session_id_or_opts.limit ?? 50);
+    } else {
+      session_id = session_id_or_opts;
+    }
     const self = this;
     const c = self._db("sessions");
     const conditions: string[] = [];
@@ -1410,13 +1449,23 @@ export function applyRecallDomain(klass: typeof StorageBase): void {
 
   proto.list_learning_items = function (
     this: StorageBase & RecallDomainI,
-    session_id = "",
+    session_id_or_opts:
+      | string
+      | { session_id?: string; branch_id?: string | null; limit?: number } = "",
     branch_id: string | null = null,
     episode_id = "",
     bundle_id = "",
     status = "",
     limit = 100
   ): JsonDict[] {
+    let session_id = "";
+    if (session_id_or_opts !== null && typeof session_id_or_opts === "object") {
+      session_id = String(session_id_or_opts.session_id ?? "");
+      branch_id = session_id_or_opts.branch_id ?? null;
+      limit = Number(session_id_or_opts.limit ?? 100);
+    } else {
+      session_id = session_id_or_opts;
+    }
     const self = this;
     const c = self._db("memory");
     const conditions: string[] = [];

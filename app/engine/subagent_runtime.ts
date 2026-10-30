@@ -79,6 +79,8 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import * as os from "node:os";
 
+import { SERVER_STATE } from "./server/http_server_keys.js";
+
 import * as _work_copy_mod from "./work_copy.js";
 import * as _team_mod from "./team.js";
 import * as _subagent_registry_mod from "./subagent_registry.js";
@@ -663,6 +665,29 @@ export const MAX_CONCURRENT_SUBAGENTS = 8;
  * MAX_CONCURRENT_SUBAGENTS, it does not bypass it.
  */
 export const MAX_BACKGROUND_PER_TURN = 4;
+
+/**
+ * 单个父会话能同时拥有多少活身子代。全局信号量（MAX_CONCURRENT_SUBAGENTS）只管
+ * 进程总量，管不住"一个失控父会话把信号量吃光"；这一档按父会话钳。
+ * 读 `subagent.max_children_per_agent`，缺省 10，钳位 1–50。
+ */
+export const MAX_CHILDREN_PER_AGENT = 10;
+
+/** 单父会话子代上限（设置页可调）。每次读当前配置，不做缓存——配置可能刚被改过。 */
+export function get_max_children_per_agent(): number {
+  let val = MAX_CHILDREN_PER_AGENT;
+  try {
+    const sub = (SERVER_STATE._CONFIG as any)?.["subagent"];
+    const raw = sub?.["max_children_per_agent"];
+    if (raw !== undefined && raw !== null) {
+      const n = Number.parseInt(String(raw), 10);
+      if (Number.isFinite(n)) val = n;
+    }
+  } catch {
+    // 配置缺失/坏值 → 用默认
+  }
+  return Math.min(50, Math.max(1, val));
+}
 
 /** Per-sub-agent result cap fed back to the parent. */
 export const MAX_RESULT_CHARS = 6000;
@@ -1294,6 +1319,20 @@ export class SubagentRuntime {
     let n = 0;
     for (const sid of ids) if (this.kill(sid)) n += 1;
     return n;
+  }
+
+  /**
+   * 优雅停：先请每个子代自己收摊，等不到再硬杀。返回带 killed/requested/request_id 的账。
+   * 真正的编排在 team_collab（要等子代把回执写进协作账），这里只做转发。
+   */
+  async kill_all_graceful(
+    parent_session_id: string,
+    opts: { reason?: string; timeout_s?: number | null } = {},
+  ): Promise<Record<string, unknown>> {
+    const reason = opts.reason ?? "user_stop";
+    const timeout_s = opts.timeout_s ?? null;
+    const { graceful_shutdown_team } = await import("./team_collab.js");
+    return await graceful_shutdown_team(this, parent_session_id, { reason, timeout_s });
   }
 
   // ── Internals ────────────────────────────────────────────────────────────

@@ -1181,6 +1181,33 @@ function module_not_found(name: string): ModuleNotFoundErrorP {
   return new ModuleNotFoundErrorP(name);
 }
 
+/** 本段接缝名（`keyof HttpS6Seams`）——注册表的键域，也是探针"少接一臂"的核对面。 */
+export type HttpS6SeamKey = keyof HttpS6Seams;
+
+const _s6_seam_getters: Record<string, () => any> = {};
+
+/** 装配层把真件接进本段（与 S7/S8/S9 同族的注册表）；未注册的臂保持缺省 fail-closed。 */
+export function register_s6_seam<K extends HttpS6SeamKey>(key: K, getter: () => any): void {
+  _s6_seam_getters[key] = getter;
+}
+
+export function reset_s6_seams_for_probe(): void {
+  for (const k of Object.keys(_s6_seam_getters)) delete _s6_seam_getters[k];
+}
+
+/**
+ * 解析当前生效的接缝表：已注册的臂用真件，其余回落缺省（fail-closed）。
+ * handler 的 `seams` 默认值**每次调用**都重新解析 ⇒ 装配只需在服务启动时注册一次。
+ */
+export function resolve_http_s6_seams(): HttpS6Seams {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(HTTP_S6_SEAMS)) {
+    const getter = _s6_seam_getters[key];
+    out[key] = getter ? getter() : (HTTP_S6_SEAMS as any)[key];
+  }
+  return out as unknown as HttpS6Seams;
+}
+
 /**
  * 缺省 = 未接线 = fail-closed（S3/S5 同族）：模块面抛 CPython 的 ModuleNotFoundError，
  * fs/路径面抛 PyNameErrorP（"seam is not wired"）。任何一臂都不许悄悄成功。
@@ -1305,7 +1332,7 @@ export const HTTP_S6_SEAM_KEYS: readonly string[] = Object.keys(HTTP_S6_SEAMS).s
  * （端口同序：先真值判断，后 abspath）。多参 `os.path.join` 拆成三次二元 `os_path_join`（§M）。
  * 名字保留下划线 = 源名；export 是给 S6b–e 与探针复用，不是扩面。
  */
-export function _config_path(seams: HttpS6Seams = HTTP_S6_SEAMS): string {
+export function _config_path(seams: HttpS6Seams = resolve_http_s6_seams()): string {
   if (py_truth(SERVER_STATE._CONFIG_PATH)) return SERVER_STATE._CONFIG_PATH;
   const dir = os_path_dirname(seams.abspath_module_file());
   return os_path_join(os_path_join(os_path_join(dir, ".."), ".."), "config.json");
@@ -1316,7 +1343,7 @@ export function _config_path(seams: HttpS6Seams = HTTP_S6_SEAMS): string {
  * → `os.replace(tmp, path)`。盘 IO 全走 seam（闸规：探针观察、不真写盘）。
  * open/dump/replace 任一步失败（OSError 族）在源与本段同样**冒出调用方**——此函数无 try。
  */
-export function _persist_config(seams: HttpS6Seams = HTTP_S6_SEAMS): void {
+export function _persist_config(seams: HttpS6Seams = resolve_http_s6_seams()): void {
   const path = _config_path(seams);
   const tmp = `${path}.tmp`; // f"{path}.tmp"（源 4587，等价拼接见 §D7）
   seams.fs_write_text(tmp, py_json_dump_indent2(SERVER_STATE._CONFIG)); // 源 4588–4589（§D4）
@@ -1371,7 +1398,7 @@ export function _redact(cfg: unknown): unknown {
  */
 export async function handle_get_settings(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   void request;
   void seams;
@@ -1395,7 +1422,7 @@ export async function handle_get_settings(
  */
 export async function handle_permission_rules_list(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const prModule = seams.permission_rules_module(); // 源 4627
   const tpModule = seams.tool_policy_module(); // 源 4628
@@ -1440,7 +1467,7 @@ export async function handle_permission_rules_list(
  */
 export async function handle_permission_rule_create(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const prModule = seams.permission_rules_module(); // 源 4654–4656：先于 json-try（S6-B3）
   let body: JsonDict;
@@ -1493,7 +1520,7 @@ export async function handle_permission_rule_create(
  */
 export async function handle_permission_rule_delete(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const prModule = seams.permission_rules_module(); // 源 4683（无 try）
   const removed = prModule.get_permission_rules().remove(request.match_info.index("rule_id"));
@@ -1511,7 +1538,7 @@ export async function handle_permission_rule_delete(
  */
 export async function handle_models_list(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   void request;
   const reg = seams.model_registry_module().get_model_registry(); // 源 4690–4691
@@ -1531,7 +1558,7 @@ export async function handle_models_list(
  */
 export async function handle_models_resolve(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const moduleFace = seams.model_registry_module(); // 源 4701
   const model = py_strip_or(request.query.get("model")); // (query.get("model") or "").strip()（§M py_strip_or 组合面）
@@ -1564,7 +1591,7 @@ export async function handle_models_resolve(
  */
 export async function handle_models_sync_providers(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   let body: JsonDict;
   try {
@@ -1681,7 +1708,7 @@ const COMP_KEYS: readonly string[] = [
 
 export async function handle_update_settings(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   let patch: JsonDict;
   try {
@@ -1987,7 +2014,7 @@ export async function handle_update_settings(
  */
 export async function handle_get_tools(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   void request;
   const toolsModule = seams.tools_module(); // 源 4950
@@ -2042,7 +2069,7 @@ export async function handle_get_tools(
  */
 export async function handle_subagents_list(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const saModule = seams.subagent_runtime_module(); // 源 4993–4995（一条 import 三个名字 ⇒ 一次 getter）
   const maxConcurrent = saModule.MAX_CONCURRENT_SUBAGENTS; // 源 4994 的值绑定位（§D18）
@@ -2114,7 +2141,7 @@ export async function handle_subagents_list(
  */
 export async function handle_subagent_kill(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const saModule = seams.subagent_runtime_module(); // 源 5047
   const subagent_id = request.match_info.get("id", ""); // 源 5048（.get 面，非 4684 的下标面）
@@ -2147,7 +2174,7 @@ export async function handle_subagent_kill(
  */
 export async function handle_subagents_kill_all(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const saModule = seams.subagent_runtime_module(); // 源 5066（在 json-try **之前**，与 #69 同侧）
   let data: JsonDict;
@@ -2193,7 +2220,7 @@ export async function handle_subagents_kill_all(
  */
 export async function handle_subagent_types(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   void request;
   const registryModule = seams.subagent_registry_module(); // 源 5092
@@ -2242,7 +2269,7 @@ export async function handle_subagent_types(
  */
 export async function handle_subagent_type_update(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const registryModule = seams.subagent_registry_module(); // 源 5110
   seams.storage_module(); // 源 5111：死 import（S6-B22）——getter 照调、绑定名从不使用
@@ -2434,7 +2461,7 @@ export async function handle_subagent_type_update(
  */
 export async function handle_rollback_list(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const router = request.app.state.require(ROUTER_KEY); // 源 5226（下标面：缺键 KeyError）
   const qSid = request.query.get("sessionId"); // 源 5227 左操作数
@@ -2462,7 +2489,7 @@ export async function handle_rollback_list(
  */
 export async function handle_rollback_apply(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const router = request.app.state.require(ROUTER_KEY); // 源 5240
   let data: JsonDict;
@@ -2506,7 +2533,7 @@ export async function handle_rollback_apply(
  */
 export async function handle_checkpoints(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const router = request.app.state.require(ROUTER_KEY); // 源 5264
   const qSid = request.query.get("sessionId"); // 源 5265 左操作数
@@ -2567,7 +2594,7 @@ export async function handle_checkpoints(
  */
 export async function handle_checkpoint_preview(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const router = request.app.state.require(ROUTER_KEY); // 源 5301
   const qSid = request.query.get("sessionId"); // 源 5302 左操作数
@@ -2597,7 +2624,7 @@ export async function handle_checkpoint_preview(
  */
 export async function handle_checkpoint_label(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const router = request.app.state.require(ROUTER_KEY); // 源 5316
   let data: JsonDict;
@@ -2638,7 +2665,7 @@ export async function handle_checkpoint_label(
  */
 export async function handle_get_events(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const storageModule = seams.storage_module(); // 源 5334（**最顶上**，早于 sid 的 400 闸）
   const miSid = request.match_info.get("sessionId"); // 源 5335 左操作数
@@ -2669,7 +2696,7 @@ export async function handle_get_events(
  */
 export async function handle_verify_event_chain(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const storageModule = seams.storage_module(); // 源 5350
   const miSid = request.match_info.get("sessionId"); // 源 5351
@@ -2690,7 +2717,7 @@ export async function handle_verify_event_chain(
  */
 export async function handle_get_projected_state(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const storageModule = seams.storage_module(); // 源 5360
   const miSid = request.match_info.get("sessionId"); // 源 5361
@@ -2717,7 +2744,7 @@ export async function handle_get_projected_state(
  */
 export async function handle_fork_at_seq(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const storageModule = seams.storage_module(); // 源 5372
   let data: JsonDict;
@@ -2757,7 +2784,7 @@ export async function handle_fork_at_seq(
  */
 export async function handle_get_session_log(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const storageModule = seams.storage_module(); // 源 5395
   const miSid = request.match_info.get("sessionId"); // 源 5396
@@ -2777,7 +2804,7 @@ export async function handle_get_session_log(
  */
 export async function handle_get_session_transcript(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const storageModule = seams.storage_module(); // 源 5405
   const miSid = request.match_info.get("sessionId"); // 源 5406
@@ -2805,7 +2832,7 @@ export async function handle_get_session_transcript(
  */
 export async function handle_get_session_log_info(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const storageModule = seams.storage_module(); // 源 5415
   const miSid = request.match_info.get("sessionId"); // 源 5416 左操作数
@@ -2834,7 +2861,7 @@ export async function handle_get_session_log_info(
  */
 export async function handle_artifacts(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const router = request.app.state.require(ROUTER_KEY); // 源 5432（下标面）
   let sid: unknown = request.query.get("session_id"); // 源 5433 第一档
@@ -2888,7 +2915,7 @@ export function _parse_range_days(request: WebRequest): number {
  */
 export async function handle_usage_stats(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   void seams; // 本函数不碰任何模块缝（storage 走 router.storage，S6-B39）；参数只为 S10 签名统一
   const router = request.app.state.require(ROUTER_KEY); // 源 5456
@@ -2946,7 +2973,7 @@ export async function handle_usage_stats(
  */
 export async function handle_token_analytics(
   request: WebRequest,
-  seams: HttpS6Seams = HTTP_S6_SEAMS,
+  seams: HttpS6Seams = resolve_http_s6_seams(),
 ): Promise<WebResponse> {
   const analytics = seams.token_analytics_module().get_token_analytics(); // 源 5488–5489
   const router = await seams.router_for_request(request); // 源 5493（try **之外**，S6-B46/§D37）

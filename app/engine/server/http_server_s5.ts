@@ -465,6 +465,33 @@ function module_not_found(name: string): ModuleNotFoundErrorP {
   return new ModuleNotFoundErrorP(name);
 }
 
+/** 本段接缝名（`keyof HttpS5Seams`）——注册表的键域，也是探针"少接一臂"的核对面。 */
+export type HttpS5SeamKey = keyof HttpS5Seams;
+
+const _s5_seam_getters: Record<string, () => any> = {};
+
+/** 装配层把真件接进本段（与 S7/S8/S9 同族的注册表）；未注册的臂保持缺省 fail-closed。 */
+export function register_s5_seam<K extends HttpS5SeamKey>(key: K, getter: () => any): void {
+  _s5_seam_getters[key] = getter;
+}
+
+export function reset_s5_seams_for_probe(): void {
+  for (const k of Object.keys(_s5_seam_getters)) delete _s5_seam_getters[k];
+}
+
+/**
+ * 解析当前生效的接缝表：已注册的臂用真件，其余回落缺省（fail-closed）。
+ * handler 的 `seams` 默认值**每次调用**都重新解析 ⇒ 装配只需在服务启动时注册一次。
+ */
+export function resolve_http_s5_seams(): HttpS5Seams {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(HTTP_S5_SEAMS)) {
+    const getter = _s5_seam_getters[key];
+    out[key] = getter ? getter() : (HTTP_S5_SEAMS as any)[key];
+  }
+  return out as unknown as HttpS5Seams;
+}
+
 /**
  * 缺省 = 未接线 = 什么都不许悄悄成功：模块面抛 CPython 的 ModuleNotFoundError
  * （源里那些**不在 try** 的函数级 import 会直接冒出 handler；在 try 里的被同一臂吞成 500——逐点姿势不统一，
@@ -560,7 +587,7 @@ export const HTTP_S5_SEAM_KEYS: readonly string[] = Object.keys(HTTP_S5_SEAMS).s
  */
 export async function handle_skills(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   void request;
   const loader = seams.skill_loader_get();
@@ -576,7 +603,7 @@ export async function handle_skills(
  */
 export async function handle_skill_experiences(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   let limit: number;
   try {
@@ -599,7 +626,7 @@ export async function handle_skill_experiences(
  */
 export async function handle_relations(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const node_type = request.query.get("node_type", "");
   const node_id = request.query.get("node_id", "");
@@ -637,11 +664,11 @@ export async function handle_relations(
  */
 export async function handle_approvals_pending(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   void request;
   try {
-    return json_response(seams.pending_approvals(seams.storage_get()));
+    return json_response(await seams.pending_approvals(seams.storage_get()));
   } catch (exc) {
     seams.log_exception("GET /api/approvals/pending failed");
     return json_response({ error: exc_str(exc) }, 500);
@@ -661,7 +688,7 @@ export async function handle_approvals_pending(
  */
 export async function handle_session_learning(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const session_id = py_str(py_or(py_or(request.match_info.get("id", ""), request.query.get("sessionId", "")), ""));
   const branch_id = request.query.get("branchId", "");
@@ -758,7 +785,7 @@ export async function handle_session_learning(
  */
 export async function handle_learning_item_action(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const item_id = request.match_info.get("id", "");
   const action = request.match_info.get("action", "");
@@ -852,7 +879,7 @@ export async function handle_learning_item_action(
  */
 export async function handle_learning_item_trace(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const item_id = request.match_info.get("id", "");
   const session_id = py_strip(request.query.get("sessionId", ""));
@@ -945,7 +972,7 @@ export async function handle_learning_item_trace(
  */
 export async function handle_episodes_list(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const session_id = request.query.get("sessionId", "");
   const branch_id = request.query.get("branchId", "");
@@ -967,7 +994,7 @@ export async function handle_episodes_list(
  */
 export async function handle_episode_seal(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   let data: unknown;
   try {
@@ -1015,7 +1042,7 @@ export async function handle_episode_seal(
  */
 export async function handle_history_trace(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const session_id = request.query.get("sessionId", "");
   const goal_id = request.query.get("goalId", "");
@@ -1051,7 +1078,7 @@ export async function handle_history_trace(
  */
 export async function handle_mailbox_list(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const box_id = py_str(py_or(py_or(request.match_info.get("box_id", ""), request.query.get("box_id", "")), ""));
   if (!py_truth(box_id)) {
@@ -1074,7 +1101,7 @@ export async function handle_mailbox_list(
  */
 export async function handle_mailbox_drain(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const box_id = py_str(py_or(request.match_info.get("box_id", ""), ""));
   if (!py_truth(box_id)) {
@@ -1089,7 +1116,7 @@ export async function handle_mailbox_drain(
  */
 export async function handle_skill_candidates(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const status = py_or(request.query.get("status", ""), null);
   let limit: number;
@@ -1109,7 +1136,7 @@ export async function handle_skill_candidates(
  */
 export async function handle_skill_candidate_create(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const lifecycle = seams.skill_lifecycle_get();
   const data: unknown = await request.json();                         // BARE（4314）
@@ -1130,7 +1157,7 @@ export async function handle_skill_candidate_create(
  */
 export async function handle_skill_candidate_action(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const lifecycle = seams.skill_lifecycle_get();
   const loader = seams.skill_loader_get();
@@ -1198,7 +1225,7 @@ export async function handle_skill_candidate_action(
  */
 export async function handle_import_skill(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const loader = seams.skill_loader_get();
   const data: unknown = await request.json();                         // BARE（4370）
@@ -1224,7 +1251,7 @@ export async function handle_import_skill(
  */
 export async function handle_marketplace_catalog(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const category = py_or(py_strip(request.query.get("category", "")), null);
   const query = py_or(py_strip(request.query.get("q", "")), null);
@@ -1236,7 +1263,7 @@ export async function handle_marketplace_catalog(
 /** POST /api/skills/{name}/uninstall（源 4392–4401）。ok → 硬编码 `status:"disabled"`，否则 400 `{ok:false,error}`。 */
 export async function handle_uninstall_skill(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const name = request.match_info.get("name", "");
   if (!py_truth(name)) {
@@ -1252,7 +1279,7 @@ export async function handle_uninstall_skill(
 /** GET /api/skills/{name}（源 4404–4413）。ok → value，否则 **404**（不是 400）。 */
 export async function handle_skill_detail(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const name = request.match_info.get("name", "");
   if (!py_truth(name)) {
@@ -1273,7 +1300,7 @@ export async function handle_skill_detail(
  */
 export async function handle_install_skill(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const loader = seams.skill_loader_get();
   const registry = seams.skill_registry();
@@ -1313,7 +1340,7 @@ export async function handle_install_skill(
  */
 export async function handle_search_sessions(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const q = py_strip(request.query.get("q", ""));
   const workspace = request.query.get("workspace", "");
@@ -1333,7 +1360,7 @@ export async function handle_search_sessions(
  */
 export async function handle_vet_skill(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const data: unknown = await request.json();                         // BARE（4475）
   let content = py_dict_get(data, "content");
@@ -1358,7 +1385,7 @@ export async function handle_vet_skill(
 /** POST /api/skills/{name}/enable（源 4497–4504）——**没有 `if not name` 前置检查**（与 uninstall/detail 不对称）。 */
 export async function handle_enable_skill(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const loader = seams.skill_loader_get();
   const name = request.match_info.get("name", "");
@@ -1372,7 +1399,7 @@ export async function handle_enable_skill(
 /** POST /api/skills/{name}/disable（源 4507–4514）——同 enable，无 name 前置检查。 */
 export async function handle_disable_skill(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const loader = seams.skill_loader_get();
   const name = request.match_info.get("name", "");
@@ -1390,7 +1417,7 @@ export async function handle_disable_skill(
 /** GET /api/plugins（源 4519–4525）。`supported = list(SUPPORTED_CONTRIBUTIONS)`（S5 用 py_iter 折成数组）。 */
 export async function handle_plugins(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   void request;
   return json_response({
@@ -1406,7 +1433,7 @@ export async function handle_plugins(
  */
 export async function handle_import_plugin(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   let body: unknown;
   try {
@@ -1433,7 +1460,7 @@ const JSON_DECODE_ERROR: readonly string[] = ["JSONDecodeError"];
 /** POST /api/plugins/{name}/enable（源 4544–4549）。ok → value，否则 **404**。 */
 export async function handle_plugin_enable(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const result = seams.plugin_registry_get().enable(request.match_info.get("name", ""));
   if (py_truth(py_getattr(result, "ok"))) {
@@ -1445,7 +1472,7 @@ export async function handle_plugin_enable(
 /** POST /api/plugins/{name}/disable（源 4552–4557）。 */
 export async function handle_plugin_disable(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const result = seams.plugin_registry_get().disable(request.match_info.get("name", ""));
   if (py_truth(py_getattr(result, "ok"))) {
@@ -1457,7 +1484,7 @@ export async function handle_plugin_disable(
 /** DELETE /api/plugins/{name}（源 4560–4567）。**故意不删磁盘文件**（docstring 4561–4562）。 */
 export async function handle_plugin_remove(
   request: WebRequest,
-  seams: HttpS5Seams = HTTP_S5_SEAMS,
+  seams: HttpS5Seams = resolve_http_s5_seams(),
 ): Promise<WebResponse> {
   const result = seams.plugin_registry_get().remove(request.match_info.get("name", ""));
   if (py_truth(py_getattr(result, "ok"))) {

@@ -404,14 +404,23 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
     return self.event_store;
   };
 
+  /** 第二参兼容 number（from_seq）与 options 对象（http_server 的 kwargs 口径）。 */
   proto.get_events = function (
     this: StorageBase & SessionsDomainI,
     sid: string,
-    from_seq = 0,
+    from_seq_or_opts: number | { from_seq?: number; to_seq?: number | null; limit?: number | null } = 0,
     to_seq: number | null = null,
     limit: number | null = null
   ): unknown[] {
     const self = this;
+    let from_seq = 0;
+    if (from_seq_or_opts !== null && typeof from_seq_or_opts === "object") {
+      from_seq = Number(from_seq_or_opts.from_seq ?? 0);
+      to_seq = from_seq_or_opts.to_seq ?? null;
+      limit = from_seq_or_opts.limit ?? null;
+    } else {
+      from_seq = Number(from_seq_or_opts);
+    }
     return self.event_store.read_stream(sid, from_seq, to_seq, limit);
   };
 
@@ -420,24 +429,38 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
     return self.event_store.verify_chain(sid);
   };
 
+  /** 第二参兼容 number（at_seq）与 options 对象（http_server 的 kwargs 口径）。 */
   proto.project_session_state = function (
     this: StorageBase & SessionsDomainI,
     sid: string,
-    at_seq?: number | null
+    at_seq_or_opts?: number | null | { at_seq?: number | null }
   ): unknown {
     const self = this;
-    return self.projection_engine.project_session(sid, at_seq ?? null);
+    let at_seq: number | null = null;
+    if (at_seq_or_opts !== null && typeof at_seq_or_opts === "object") {
+      at_seq = at_seq_or_opts.at_seq ?? null;
+    } else {
+      at_seq = at_seq_or_opts ?? null;
+    }
+    return self.projection_engine.project_session(sid, at_seq);
   };
 
+  /** 第四参兼容 string（title）与 options 对象（http_server 的 kwargs 口径）。 */
   proto.fork_at_seq = function (
     this: StorageBase & SessionsDomainI,
     source_sid: string,
     fork_seq: number,
     new_sid: string,
-    title?: string | null
+    title_or_opts?: string | null | { title?: string | null }
   ): unknown {
     const self = this;
-    return self.projection_engine.fork_at_seq(source_sid, fork_seq, new_sid, title ?? null);
+    let title: string | null = null;
+    if (typeof title_or_opts === "string") {
+      title = title_or_opts;
+    } else if (title_or_opts && typeof title_or_opts === "object") {
+      title = title_or_opts.title ?? null;
+    }
+    return self.projection_engine.fork_at_seq(source_sid, fork_seq, new_sid, title);
   };
 
   proto.get_session_log = function (this: StorageBase & SessionsDomainI, sid: string): string {
@@ -458,20 +481,29 @@ export function applySessionsDomain(klass: typeof StorageBase): void {
     return self._session_logger.getLogInfo(sid);
   };
 
+  /** 第二参兼容 number（limit）与 options 对象（http_server 的 kwargs 口径）。 */
   proto.get_messages = function (
     this: StorageBase & SessionsDomainI,
     sid: string,
-    limit = 100,
+    limit_or_opts: number | { limit?: number; offset?: number } = 100,
     offset = 0
   ): JsonDict[] {
     const self = this;
+    let limit = 100;
+    let off = offset;
+    if (limit_or_opts !== null && typeof limit_or_opts === "object") {
+      limit = Number(limit_or_opts.limit ?? 100);
+      off = Number(limit_or_opts.offset ?? 0);
+    } else {
+      limit = Number(limit_or_opts);
+    }
     // Oldest-first page: ORDER BY seq ascending = the FIRST N rows.
     return (
       self
         ._db("sessions")
         .execute(
           "SELECT * FROM session_messages WHERE session_id=? ORDER BY seq LIMIT ? OFFSET ?",
-          [sid, limit, offset]
+          [sid, limit, off]
         )
         .fetchall() as Row[]
     ).map((x) => ({ ...(x as Row) }) as JsonDict);

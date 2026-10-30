@@ -264,7 +264,10 @@ export interface SkillsDomainI {
   insert_skill_candidate(opts: SkillCandidateInsertOpts): string;
   _candidate_row_to_dict(r: Row): JsonDict;
   get_skill_candidate(cid: string): JsonDict | null;
-  list_skill_candidates(status?: string | null, limit?: number): JsonDict[];
+  list_skill_candidates(
+    status_or_opts?: string | null | { status?: string | null; limit?: number },
+    limit?: number
+  ): JsonDict[];
   set_skill_candidate_status(
     cid: string,
     status: string,
@@ -741,9 +744,16 @@ function get_skill_candidate(
 /** storage.py 2962–2971. */
 function list_skill_candidates(
   this: StorageBase & SkillsDomainI,
-  status: string | null = null,
+  status_or_opts: string | null | { status?: string | null; limit?: number } = null,
   limit = 50
 ): JsonDict[] {
+  let status: string | null = null;
+  if (status_or_opts !== null && typeof status_or_opts === "object") {
+    status = status_or_opts.status ?? null;
+    limit = Number(status_or_opts.limit ?? 50);
+  } else {
+    status = status_or_opts;
+  }
   const self = this as unknown as StorageBase & SkillsDomainI;
   let q = "SELECT * FROM skill_candidates";
   const args: unknown[] = [];
